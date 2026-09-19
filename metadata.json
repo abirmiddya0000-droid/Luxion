@@ -1,0 +1,6 @@
+{
+  "name": "LUXION",
+  "description": "Clean, open, premium AI chat experience founded by Abir.",
+  "requestFramePermissions": ["microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_OPENAI_API"]
+}
