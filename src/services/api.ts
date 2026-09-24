@@ -1,33 +1,70 @@
 import { User, ChatAttachment } from '../types';
+import { LuxionBrain } from './luxionBrain';
+import { MemoryService, MemoryItem } from './memory';
 
 const API_BASE = '';
 
-export async function checkServerHealth(): Promise<{ status: string; hasOpenAIKey: boolean }> {
+export async function checkServerHealth(): Promise<{ status: string; engine?: string; founder?: string }> {
   try {
     const res = await fetch(`${API_BASE}/api/health`);
     if (!res.ok) throw new Error('Health check failed');
     return await res.json();
   } catch (err) {
-    return { status: 'offline', hasOpenAIKey: false };
+    return { status: 'offline', engine: 'LUXION Native Core (Client Mode)', founder: 'Abir' };
   }
 }
 
 export async function sendChatMessage(
   message: string,
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
-  attachment?: ChatAttachment | null
+  attachment?: ChatAttachment | null,
+  providedMemories?: MemoryItem[],
+  personaOptions?: { personaMode?: string; arroganceLevel?: number }
 ): Promise<string> {
-  const res = await fetch(`${API_BASE}/api/ai/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message, history, attachment }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'Request failed' }));
-    throw new Error(err.error || 'Chat request failed');
+  // 1. Automatically extract and persist any stated user facts/preferences
+  if (message && typeof window !== 'undefined') {
+    const drafts = MemoryService.extractFromMessage(message);
+    for (const d of drafts) {
+      MemoryService.save(d);
+    }
   }
-  const data = await res.json();
-  return data.reply;
+
+  // 2. Retrieve relevant contextual memories
+  const activeMemories = providedMemories || (typeof window !== 'undefined' ? MemoryService.findRelevant(message) : []);
+
+  // 3. Dispatch to backend or run native local engine
+  try {
+    const res = await fetch(`${API_BASE}/api/ai/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        history,
+        attachment,
+        memories: activeMemories,
+        personaMode: personaOptions?.personaMode,
+        arroganceLevel: personaOptions?.arroganceLevel,
+      }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      return data.reply;
+    }
+  } catch (err) {
+    // If backend is unreachable, run LUXION Brain directly on client
+    console.warn('[LUXION] Network unavailable, activating client-side LUXION brain:', err);
+  }
+
+  // Standalone native execution fallback with memory
+  const evaluation = LuxionBrain.evaluate({
+    message,
+    history,
+    attachment,
+    memories: activeMemories,
+  });
+
+  return evaluation.reply;
 }
 
 export async function loginUser(email: string, password?: string): Promise<{ token: string; user: User }> {
@@ -82,15 +119,3 @@ export async function verifyOtp(email: string, code: string): Promise<{ token: s
   return await res.json();
 }
 
-export async function synthesizeSpeech(text: string, voice = 'onyx'): Promise<Blob> {
-  const res = await fetch(`${API_BASE}/api/ai/tts`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ text, voice, language: 'en' }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'TTS request failed' }));
-    throw new Error(err.error || 'TTS request failed');
-  }
-  return await res.blob();
-}

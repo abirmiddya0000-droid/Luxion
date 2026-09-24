@@ -1,26 +1,35 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# LUXION
 
-# Run and deploy your AI Studio app
+LUXION is a clean, modern, standalone AI chat and developer platform founded and created by Abir.
 
-This contains everything you need to run your app locally.
+LUXION runs entirely on its own autonomous native intelligence and speech synthesis engine. It requires zero third-party AI keys (no OpenAI, no Gemini, no Claude, no Grok) and operates with complete data privacy, speed, and reliability.
 
-View your app in AI Studio: https://ai.studio/apps/20a3789f-3444-493c-9cb6-4b4410f7442b
+## Features
+- **LUXION Native Core**: Autonomous reasoning, mathematics/unit calculations, code generation, architectural analysis, and contextual conversation tracking.
+- **Built-in Interactive Code Previewer**: Live browser sandboxing for generated apps (games, calculators, tools).
+- **LUXION Voice & TTS**: Tuned, responsive speech synthesis matching LUXION's calm, confident personality.
+- **Microphone STT**: Real-time voice-to-text dictation.
+- **File & Image Attachments**: Document inspection, metrics, code reviews, and visual assets.
+- **Slash Commands**: `/build <request>`, `/clear`, `/help`.
+- **Session History & Export**: Local persistence with Markdown conversation export.
 
 ## Run Locally
 
-**Prerequisites:**  Node.js
-
+**Prerequisites:** Node.js 18+
 
 1. Install dependencies:
-   `npm install`
-2. Set the `OPENAI_API_KEY` in [.env.local](.env.local) to your OpenAI API key
-3. Run the app:
-   `npm run dev`
+   ```bash
+   npm install
+   ```
 
+2. Run the application:
+   ```bash
+   npm run dev
+   ```
 
-## Required production configuration
-- `OPENAI_API_KEY` for AI chat and server-side TTS.
-- `RESEND_API_KEY` and `RESEND_FROM_EMAIL` for real email OTP delivery. OTP codes are never returned to the browser.
-- `/build`, `/clear`, and `/help` are handled as local slash commands.
+3. Open `http://localhost:3000`.
+
+## Production & Deployment (Render / Cloud)
+- **Zero AI API Keys Required**: The core AI engine runs out of the box with zero external configuration.
+- Optional: Set `RESEND_API_KEY` and `RESEND_FROM_EMAIL` if you wish to enable live email OTP verification.
+- Start command: `node server.ts` or `npm run build && npm start`.

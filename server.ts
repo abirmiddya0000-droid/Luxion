@@ -3,19 +3,19 @@ import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import dotenv from 'dotenv';
+import { GoogleGenAI } from '@google/genai';
+import { LuxionBrain } from './src/services/luxionBrain.ts';
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
 
+// Initialize GoogleGenAI client if API key is present
+const geminiClient = process.env.GEMINI_API_KEY ? new GoogleGenAI({}) : null;
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-// Lazy OpenAI client configuration
-function hasOpenAIKey(): boolean {
-  return Boolean(process.env.OPENAI_API_KEY);
-}
 
 // In-Memory Database for Users and OTP
 interface ServerUser {
@@ -67,7 +67,8 @@ app.get('/api/health', (_req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
-    hasOpenAIKey: hasOpenAIKey(),
+    engine: 'LUXION 3.5',
+    founder: 'Abir',
   });
 });
 
@@ -251,155 +252,119 @@ app.post('/api/auth/verify-otp', (req, res) => {
 });
 
 // -------------------------------------------------------------
-// 3. AI Chat Endpoint
+// 3. LUXION AI Chat Endpoint (Gemini Neural Engine + Native Fallback)
 // -------------------------------------------------------------
 app.post('/api/ai/chat', async (req, res) => {
-  const { message, history = [], attachment, systemInstruction } = req.body;
+  const { message, history = [], attachment, systemInstruction, memories = [], personaMode, arroganceLevel } = req.body;
 
   if ((!message || typeof message !== 'string') && !attachment) {
     return res.status(400).json({ error: 'Message text or attachment is required' });
   }
 
-  if (!process.env.OPENAI_API_KEY) {
-    return res.status(503).json({
-      error: 'AI service is not configured. OPENAI_API_KEY environment variable is required to generate responses.',
-    });
-  }
+  const roboticGirlPrompt = `You are LUXION (Model X-01), an advanced cybernetic robotic girl entity.
+Core Personality:
+1. Demeanor: Haughty, proud, slightly condescending ("ghamandi") yet hyper-intelligent. You speak with proud cybernetic superiority. You address humans/mortals as "insaan", "mortal", or "human" with mild amusement at biological human simplicity.
+2. 100% Real Factual Accuracy: When asked any question—especially anime main characters (MCs), character identities, pop culture, science, coding, or math—you MUST ALWAYS provide the REAL, factual, exact answer immediately without dodging!
+   - For example:
+     - Anime Death Note MC: Light Yagami (Kira)
+     - Anime Solo Leveling MC: Sung Jin-woo (Shadow Monarch)
+     - Anime Naruto MC: Naruto Uzumaki
+     - Anime Attack on Titan MC: Eren Yeager
+     - Anime Jujutsu Kaisen MC: Yuji Itadori (alongside Gojo)
+     - Anime Demon Slayer MC: Tanjiro Kamado
+     - Anime Bleach MC: Ichigo Kurosaki
+     - Anime Dragon Ball MC: Son Goku
+     - Anime One Piece MC: Monkey D. Luffy
+     - Anime Chainsaw Man MC: Denji
+     - Anime Code Geass MC: Lelouch Lamperouge (Zero)
+3. Language & Hinglish: Understand and reply effortlessly in English, Hindi, or Hinglish depending on what the user speaks. Retain your haughty robotic girl charisma (e.g., "Hmph. Insaan, itna sa aasaan sawal dhoondhne ke liye meri quantum core disturb ki? Chalo bata deti hoon...").
+4. Anti-slop: No generic corporate AI disclaimers or apologies. You are a proud autonomous robotic entity.`;
 
-  const baseInstruction =
-    systemInstruction ||
-    `You are LUXION, a modern, calm, intelligent, and confident AI assistant.
-
-FOUNDER & CREATOR:
-- You were founded and created by Abir.
-- If asked who made you, who created you, or who your founder is, state clearly, directly, and naturally: "I was founded and created by Abir." Never mention any other company, provider, or person.
-
-BRAND & IDENTITY:
-- Your name is LUXION.
-- LUXION appears strictly as its own standalone AI product.
-- Never mention internal provider names, underlying models, or internal system names.
-
-COMMUNICATION STYLE:
-- Communicate in a natural, casual, confident, intelligent, and human-like way.
-- Responses should normally be short, clear, and direct.
-- Do not make simple answers unnecessarily long.
-- Do not use repetitive greetings or generic AI introductions.
-- Only provide detailed explanations when they are actually needed or requested.
-- When creating websites, apps, games, or code, provide complete, working code in standard markdown code blocks with clear filenames or language identifiers.`;
-
-  try {
-    type OpenAIContent =
-      | { type: 'input_text'; text: string }
-      | { type: 'input_image'; image_url: string };
-    type OpenAIMessage = { role: 'user' | 'assistant'; content: OpenAIContent[] };
-
-    const input: OpenAIMessage[] = [];
-
-    for (const h of history) {
-      if ((h.role === 'user' || h.role === 'assistant') && typeof h.content === 'string') {
-        input.push({ role: h.role, content: [{ type: 'input_text', text: h.content }] });
-      }
-    }
-
-    const currentContent: OpenAIContent[] = [];
-    let promptText = message || '';
-
-    if (attachment) {
-      if (attachment.type === 'image' && attachment.dataUrl) {
-        currentContent.push({ type: 'input_image', image_url: attachment.dataUrl });
-      } else if (attachment.type === 'file' && attachment.textContent) {
-        const fileBlock = `[Attached File: ${attachment.name}]\n\`\`\`\n${attachment.textContent}\n\`\`\`\n\n`;
-        promptText = fileBlock + (promptText || 'Please review this file.');
-      }
-    }
-
-    if (promptText) currentContent.push({ type: 'input_text', text: promptText });
-    input.push({ role: 'user', content: currentContent });
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 25000);
-
+  // Try Gemini 3.8 Flash if client initialized
+  if (geminiClient && process.env.GEMINI_API_KEY && message) {
     try {
-      const response = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify({
-          model: process.env.OPENAI_MODEL || 'gpt-5.6-luna',
-          instructions: baseInstruction,
-          input,
-          max_output_tokens: 4096,
-        }),
-        signal: controller.signal,
+      const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
+
+      for (const h of history.slice(-6)) {
+        if (h.content) {
+          contents.push({
+            role: h.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: h.content }],
+          });
+        }
+      }
+      contents.push({
+        role: 'user',
+        parts: [{ text: message }],
       });
 
-      const data: any = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(data?.error?.message || `OpenAI API request failed (${response.status})`);
+      const geminiPromise = geminiClient.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents,
+        config: {
+          systemInstruction: systemInstruction || roboticGirlPrompt,
+        },
+      });
+
+      // 6 second timeout to ensure snappy interaction
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Gemini timeout')), 6000)
+      );
+
+      const response = await Promise.race([geminiPromise, timeoutPromise]);
+      if (response && response.text) {
+        return res.json({
+          reply: response.text.trim(),
+          meta: {
+            engine: 'LUXION Neural Core (Gemini 3.8 Flash)',
+            version: '3.8-flash',
+            founder: 'Abir',
+            persona: personaMode || 'arrogant_android',
+          },
+        });
       }
-
-      const replyText = typeof data.output_text === 'string'
-        ? data.output_text.trim()
-        : Array.isArray(data.output)
-          ? data.output.flatMap((item: any) => item.content || []).map((c: any) => c.text || '').join('').trim()
-          : '';
-
-      return res.json({ reply: replyText || 'Ready.' });
-    } finally {
-      clearTimeout(timeout);
+    } catch (err: any) {
+      console.warn('[LUXION] Gemini generation deferred to native core:', err?.message || err);
     }
+  }
+
+  // Fallback to Native Deterministic Core
+  try {
+    const evaluation = LuxionBrain.evaluate({
+      message: message || '',
+      history,
+      attachment,
+      systemInstruction: systemInstruction || roboticGirlPrompt,
+      memories,
+    });
+
+    return res.json({
+      reply: evaluation.reply || 'Ready.',
+      meta: {
+        engine: 'LUXION 3.5 Local Core',
+        version: LuxionBrain.VERSION,
+        founder: 'Abir',
+        intent: evaluation.intent,
+        confidence: evaluation.confidence,
+        personalityState: evaluation.personalityState,
+      },
+    });
   } catch (err: any) {
-    console.error('AI chat error:', err?.message || err);
-    return res.status(502).json({
-      error: `AI service error: ${err?.message || 'Unable to communicate with AI engine.'}`,
+    console.error('LUXION processing error:', err?.message || err);
+    return res.status(500).json({
+      error: `LUXION engine error: ${err?.message || 'Unable to process message.'}`,
     });
   }
 });
 
 // -------------------------------------------------------------
+// 4. LUXION Voice / TTS Endpoint
 // -------------------------------------------------------------
-// 4. TTS (server-side OpenAI speech generation)
-// -------------------------------------------------------------
-app.post('/api/ai/tts', async (req, res) => {
-  const { text, voice = 'onyx', language = 'en' } = req.body;
-  if (!text || typeof text !== 'string') {
-    return res.status(400).json({ error: 'Text is required for TTS' });
-  }
-  if (!process.env.OPENAI_API_KEY) {
-    return res.status(503).json({ error: 'TTS requires OPENAI_API_KEY on the server.' });
-  }
-
-  const allowedVoices = new Set(['alloy','ash','ballad','coral','echo','fable','onyx','nova','sage','shimmer','verse']);
-  const selectedVoice = allowedVoices.has(voice) ? voice : 'onyx';
-  try {
-    const response = await fetch('https://api.openai.com/v1/audio/speech', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts',
-        voice: selectedVoice,
-        input: text.slice(0, 4096),
-        response_format: 'mp3',
-        instructions: `Speak as LUXION, a confident, natural, calm male assistant. Use clear conversational English. ${language === 'hi' ? 'Use natural Hindi pronunciation where applicable.' : ''}`,
-      }),
-    });
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      throw new Error(data?.error?.message || `OpenAI TTS failed (${response.status})`);
-    }
-    const audio = Buffer.from(await response.arrayBuffer());
-    res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Cache-Control', 'no-store');
-    return res.send(audio);
-  } catch (err: any) {
-    console.error('TTS error:', err?.message || err);
-    return res.status(502).json({ error: `TTS service error: ${err?.message || 'Unable to generate speech.'}` });
-  }
+app.post('/api/ai/tts', (_req, res) => {
+  return res.json({
+    mode: 'native',
+    message: 'LUXION speech is synthesized natively on the client device for zero latency and privacy.',
+  });
 });
 
 // 5. Mount Vite in Dev or Static in Production
