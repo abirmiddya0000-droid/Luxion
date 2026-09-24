@@ -8,6 +8,9 @@ import { SettingsModal } from './components/SettingsModal';
 import { StoryView } from './components/StoryView';
 import { AboutModal } from './components/AboutModal';
 import { AuthModal } from './components/AuthModal';
+import { BuildWorkspace, BuildTarget } from './components/BuildWorkspace';
+import { HelpModal } from './components/HelpModal';
+import { AudioWaveVisualizer } from './components/AudioWaveVisualizer';
 import { User, ChatMessage, HistorySession, VoiceSettings, ChatAttachment, AppSettings } from './types';
 import {
   getSavedSessions,
@@ -19,6 +22,7 @@ import {
 import { TTSEngine } from './services/speech';
 import { LuxionBrain } from './services/luxionBrain';
 import { MemoryService } from './services/memory';
+import { sendChatMessage } from './services/api';
 
 const DEFAULT_APP_SETTINGS: AppSettings = {
   language: {
@@ -68,6 +72,11 @@ export default function App() {
   const [isAboutOpen, setIsAboutOpen] = useState(false);
   const [isAuthOpen, setIsAuthOpen] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+
+  // Slash command workspace & help states
+  const [isBuildWorkspaceOpen, setIsBuildWorkspaceOpen] = useState(false);
+  const [buildTarget, setBuildTarget] = useState<BuildTarget>('web');
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
 
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('luxion_user');
@@ -203,10 +212,10 @@ export default function App() {
     if (!lastAssistantMsg) return;
     setIsSpeaking(true);
     const prioritized = TTSEngine.getPrioritizedVoices();
-    const voiceObj = prioritized[appSettings.voice.voiceIndex]?.voice || TTSEngine.getBestRoboticGirlVoice();
+    const voiceObj = prioritized[appSettings.voice.voiceIndex]?.voice || TTSEngine.getBestMaleVoice();
     TTSEngine.speak(lastAssistantMsg.content, {
-      pitch: appSettings.voice.calibratedPitch || appSettings.voice.pitch || 0.85,
-      rate: appSettings.voice.rate || 0.96,
+      pitch: appSettings.voice.calibratedPitch || appSettings.voice.pitch || 0.90,
+      rate: appSettings.voice.rate || 0.97,
       voice: voiceObj,
       onEnd: () => setIsSpeaking(false),
       onError: () => setIsSpeaking(false),
@@ -242,27 +251,82 @@ export default function App() {
   }, [activeSessionId]);
 
   /**
-   * Main conversational pipeline preprocessing and orchestration:
-   * USER MESSAGE -> LUXION BRAIN -> INTENT + CONTEXT + PERSONALITY STATE -> RELEVANT MEMORY -> KNOWLEDGE CONTEXT -> RESPONSE PROVIDER -> MEMORY SYNC -> CHAT UI -> TTS
+   * Main conversational pipeline:
+   * USER MESSAGE -> /api/chat (Server-Side Gemini Flash) -> LUXION UI
    */
   const handleSendMessage = useCallback(
     async (
       message: string,
       history: Array<{ role: 'user' | 'assistant'; content: string }>,
-      attachment?: ChatAttachment | null
+      attachment?: ChatAttachment | null,
+      command?: string
     ): Promise<string> => {
-      const explicitLang = appSettings.language?.autoDetect ? undefined : appSettings.language?.selected;
-      const brainResponse = await LuxionBrain.processPipeline({
-        message,
-        history,
-        attachment,
-        user,
-        language: explicitLang,
-      });
-
-      return brainResponse.reply;
+      return await sendChatMessage(message, history, attachment, undefined, command);
     },
-    [user, appSettings.language]
+    []
+  );
+
+  const handleExecuteCommand = useCallback(
+    (cmd: string) => {
+      const trimmed = cmd.trim();
+      const lower = trimmed.toLowerCase();
+
+      if (lower === '/clear') {
+        handleClearCurrentChat();
+        return;
+      }
+
+      if (lower === '/help') {
+        setIsHelpOpen(true);
+        return;
+      }
+
+      let target: BuildTarget = 'web';
+      let title = 'Web Application';
+
+      if (lower.startsWith('/build game')) {
+        target = 'game';
+        title = 'Interactive 2D Game';
+      } else if (lower.startsWith('/build app')) {
+        target = 'app';
+        title = 'Frontend Application Prototype';
+      } else if (lower.startsWith('/build website')) {
+        target = 'website';
+        title = 'Responsive Website Scaffold';
+      } else if (lower.startsWith('/build web') || lower === '/build') {
+        target = 'web';
+        title = 'Web Application Scaffold';
+      } else if (lower.startsWith('/code')) {
+        target = 'code';
+        title = 'Code Editor & Scratchpad';
+      } else if (lower.startsWith('/analyze')) {
+        target = 'analyze';
+        title = 'Code & Architecture Analysis';
+      } else if (lower.startsWith('/design')) {
+        target = 'design';
+        title = 'UI / System Design Specification';
+      }
+
+      setBuildTarget(target);
+      setIsBuildWorkspaceOpen(true);
+
+      const userMsg: ChatMessage = {
+        id: `usr_${Date.now()}`,
+        role: 'user',
+        content: trimmed,
+        timestamp: Date.now(),
+      };
+
+      const botMsg: ChatMessage = {
+        id: `bot_${Date.now() + 1}`,
+        role: 'assistant',
+        content: `**LUXION Workspace Prepared**\n- Target: \`${title}\`\n- Mode: Client-Side Sandbox Scaffold\n- Status: Initialized\n\n*Frontend prototype workspace active.*`,
+        timestamp: Date.now() + 1,
+      };
+
+      handleUpdateMessages([...messages, userMsg, botMsg]);
+    },
+    [handleClearCurrentChat, handleUpdateMessages, messages]
   );
 
   const handleExportChat = useCallback(() => {
@@ -293,34 +357,33 @@ export default function App() {
   }, [messages]);
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans selection:bg-neutral-800 selection:text-white">
+    <div className="min-h-screen bg-black text-white flex flex-col font-mono selection:bg-neutral-800 selection:text-white">
       <AnimatePresence>
         {showSplash && <OpeningSplash onFinish={() => setShowSplash(false)} />}
       </AnimatePresence>
 
       {!showSplash && (
-        <div className="flex flex-col min-h-screen animate-fade-in">
+        <div className="flex flex-col min-h-screen animate-fade-in bg-black">
           <Header
-            user={user}
+            hasMessages={messages.length > 0}
             onNewChat={handleNewChat}
-            onOpenHistory={() => setIsHistoryOpen(true)}
-            onOpenStories={() => setIsStoriesOpen(true)}
-            onOpenSettings={(tab) => {
-              setSettingsInitialTab(tab || 'voice');
+            onOpenProjects={() => {
+              setBuildTarget('web');
+              setIsBuildWorkspaceOpen(true);
+            }}
+            onOpenSettings={() => {
+              setSettingsInitialTab('voice');
               setIsSettingsOpen(true);
             }}
+            onOpenHelp={() => setIsHelpOpen(true)}
             onOpenAbout={() => setIsAboutOpen(true)}
-            onOpenAuth={() => setIsAuthOpen(true)}
-            onExportChat={handleExportChat}
-            onLogout={handleLogout}
-            isSpeaking={isSpeaking}
+            onOpenHistory={() => setIsHistoryOpen(true)}
             onToggleReadAloud={handleToggleReadAloud}
-            autoSpeak={appSettings.voice.autoSpeak}
-            onToggleAutoSpeak={handleToggleAutoSpeak}
+            isSpeaking={isSpeaking}
             onClearCurrentChat={handleClearCurrentChat}
           />
 
-          <main className="flex-1 flex flex-col">
+          <main className="flex-1 flex flex-col bg-black">
             <ChatView
               messages={messages}
               onUpdateMessages={handleUpdateMessages}
@@ -328,8 +391,34 @@ export default function App() {
               availableVoices={availableVoices}
               appSettings={appSettings}
               onSendMessage={handleSendMessage}
+              onExecuteCommand={handleExecuteCommand}
+              onClearChat={handleClearCurrentChat}
             />
           </main>
+
+          {/* Audio Wave Visualizer when TTS is speaking */}
+          <AudioWaveVisualizer
+            isSpeaking={isSpeaking}
+            onStop={() => {
+              TTSEngine.stop();
+              setIsSpeaking(false);
+            }}
+          />
+
+          {/* LUXION Build Workspace */}
+          <BuildWorkspace
+            isOpen={isBuildWorkspaceOpen}
+            target={buildTarget}
+            onClose={() => setIsBuildWorkspaceOpen(false)}
+            onSwitchTarget={(t) => setBuildTarget(t)}
+          />
+
+          {/* Slash Commands & Help Guide */}
+          <HelpModal
+            isOpen={isHelpOpen}
+            onClose={() => setIsHelpOpen(false)}
+            onSelectCommand={(cmd) => handleExecuteCommand(cmd)}
+          />
 
           <HistoryModal
             isOpen={isHistoryOpen}

@@ -5,6 +5,9 @@ import {
   Mic,
   MicOff,
   Volume2,
+  Play,
+  Pause,
+  Headphones,
   Square,
   Copy,
   Check,
@@ -22,6 +25,7 @@ import { TTSEngine, STTEngine } from '../services/speech';
 import { CodeBlock } from './CodeBlock';
 import { PreviewModal } from './PreviewModal';
 import { TypewriterMessage } from './TypewriterMessage';
+import { CommandPalette, AVAILABLE_COMMANDS } from './CommandPalette';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -49,8 +53,11 @@ interface ChatViewProps {
   onSendMessage?: (
     message: string,
     history: Array<{ role: 'user' | 'assistant'; content: string }>,
-    attachment?: ChatAttachment | null
+    attachment?: ChatAttachment | null,
+    command?: string
   ) => Promise<string>;
+  onExecuteCommand?: (command: string) => void;
+  onClearChat?: () => void;
 }
 
 export const ChatView: React.FC<ChatViewProps> = ({
@@ -60,11 +67,19 @@ export const ChatView: React.FC<ChatViewProps> = ({
   availableVoices,
   appSettings,
   onSendMessage,
+  onExecuteCommand,
+  onClearChat,
 }) => {
   const [input, setInput] = useState('');
+  const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
+  const [playbackState, setPlaybackState] = useState<'idle' | 'playing' | 'paused'>('idle');
+  const [isVoiceMode, setIsVoiceMode] = useState(false);
+  const [voiceModeState, setVoiceModeState] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
+  const isVoiceModeRef = useRef(false);
+  isVoiceModeRef.current = isVoiceMode;
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showPlusMenu, setShowPlusMenu] = useState(false);
   const [activeReactionPickerId, setActiveReactionPickerId] = useState<string | null>(null);
@@ -96,7 +111,12 @@ export const ChatView: React.FC<ChatViewProps> = ({
   }, [messages, isLoading]);
 
   useEffect(() => {
+    const unsub = TTSEngine.addStatusListener((id, status) => {
+      setSpeakingId(id);
+      setPlaybackState(status);
+    });
     return () => {
+      unsub();
       TTSEngine.stop();
       STTEngine.stopListening();
     };
@@ -166,6 +186,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
     onUpdateMessages(updated);
   };
 
+  const getActiveMaleVoice = () => {
+    if (voiceSettings.userSelectedVoice && availableVoices[voiceSettings.voiceIndex]) {
+      return availableVoices[voiceSettings.voiceIndex];
+    }
+    return TTSEngine.getBestMaleVoice() || availableVoices[voiceSettings.voiceIndex] || null;
+  };
+
   const toggleListening = () => {
     if (isListening) {
       STTEngine.stopListening();
@@ -189,25 +216,137 @@ export const ChatView: React.FC<ChatViewProps> = ({
     }
   };
 
-  const handleSpeak = (id: string, text: string) => {
-    if (speakingId === id) {
-      TTSEngine.stop();
-      setSpeakingId(null);
+  const handlePlay = (id: string, text: string) => {
+    if (speakingId === id && playbackState === 'paused') {
+      TTSEngine.resume();
+      setPlaybackState('playing');
       return;
     }
 
+    const voice = getActiveMaleVoice();
+    const acoustics = TTSEngine.getCalibratedAcoustics(voice);
     setSpeakingId(id);
-    const voice = (voiceSettings.userSelectedVoice && availableVoices[voiceSettings.voiceIndex])
-      ? availableVoices[voiceSettings.voiceIndex]
-      : (TTSEngine.getBestMaleVoice() || availableVoices[voiceSettings.voiceIndex]);
+    setPlaybackState('playing');
+
     TTSEngine.speak(text, {
+      messageId: id,
       voice,
-      rate: voiceSettings.rate,
-      pitch: voiceSettings.pitch,
-      onStart: () => setSpeakingId(id),
-      onEnd: () => setSpeakingId(null),
-      onError: () => setSpeakingId(null),
+      rate: voiceSettings.rate || acoustics.rate,
+      pitch: voiceSettings.calibratedPitch || voiceSettings.pitch || acoustics.pitch,
+      onStart: () => {
+        setSpeakingId(id);
+        setPlaybackState('playing');
+      },
+      onEnd: () => {
+        setSpeakingId(null);
+        setPlaybackState('idle');
+        if (isVoiceModeRef.current) {
+          startVoiceModeListening();
+        }
+      },
+      onError: () => {
+        setSpeakingId(null);
+        setPlaybackState('idle');
+        if (isVoiceModeRef.current) {
+          startVoiceModeListening();
+        }
+      },
     });
+  };
+
+  const handlePause = () => {
+    TTSEngine.pause();
+    setPlaybackState('paused');
+  };
+
+  const handleStop = () => {
+    TTSEngine.stop();
+    setSpeakingId(null);
+    setPlaybackState('idle');
+    if (isVoiceModeRef.current) {
+      setVoiceModeState('idle');
+    }
+  };
+
+  const handleReplay = (id: string, text: string) => {
+    const voice = getActiveMaleVoice();
+    const acoustics = TTSEngine.getCalibratedAcoustics(voice);
+    setSpeakingId(id);
+    setPlaybackState('playing');
+
+    TTSEngine.replay(id, text, {
+      voice,
+      rate: voiceSettings.rate || acoustics.rate,
+      pitch: voiceSettings.calibratedPitch || voiceSettings.pitch || acoustics.pitch,
+      onStart: () => {
+        setSpeakingId(id);
+        setPlaybackState('playing');
+      },
+      onEnd: () => {
+        setSpeakingId(null);
+        setPlaybackState('idle');
+        if (isVoiceModeRef.current) {
+          startVoiceModeListening();
+        }
+      },
+      onError: () => {
+        setSpeakingId(null);
+        setPlaybackState('idle');
+        if (isVoiceModeRef.current) {
+          startVoiceModeListening();
+        }
+      },
+    });
+  };
+
+  const startVoiceModeListening = () => {
+    if (!isVoiceModeRef.current) return;
+    setVoiceModeState('listening');
+    let capturedTranscript = '';
+
+    STTEngine.startListening({
+      onResult: (transcript, isFinal) => {
+        capturedTranscript = transcript;
+        setInput(transcript);
+        if (isFinal && transcript.trim().length > 0) {
+          STTEngine.stopListening();
+          setVoiceModeState('thinking');
+          handleSend(transcript.trim());
+        }
+      },
+      onError: (err) => {
+        console.warn('Voice Mode recognition notice:', err);
+        if (isVoiceModeRef.current) {
+          setTimeout(() => {
+            if (isVoiceModeRef.current && voiceModeState === 'listening') {
+              startVoiceModeListening();
+            }
+          }, 1500);
+        }
+      },
+      onEnd: () => {
+        if (isVoiceModeRef.current && capturedTranscript.trim() && voiceModeState === 'listening') {
+          setVoiceModeState('thinking');
+          handleSend(capturedTranscript.trim());
+        }
+      },
+    });
+  };
+
+  const toggleVoiceMode = () => {
+    if (isVoiceMode) {
+      setIsVoiceMode(false);
+      isVoiceModeRef.current = false;
+      setVoiceModeState('idle');
+      STTEngine.stopListening();
+      TTSEngine.stop();
+      setSpeakingId(null);
+      setPlaybackState('idle');
+    } else {
+      setIsVoiceMode(true);
+      isVoiceModeRef.current = true;
+      startVoiceModeListening();
+    }
   };
 
   const handleCopy = (id: string, text: string) => {
@@ -253,26 +392,64 @@ export const ChatView: React.FC<ChatViewProps> = ({
     e.target.value = '';
   };
 
+  const normalizedQuery = input.trim().toLowerCase();
+  const currentFilteredCommands = AVAILABLE_COMMANDS.filter((item) => {
+    if (!normalizedQuery || normalizedQuery === '/') return true;
+    const search = normalizedQuery.startsWith('/') ? normalizedQuery : `/${normalizedQuery}`;
+    return (
+      item.command.toLowerCase().includes(search) ||
+      item.label.toLowerCase().includes(normalizedQuery.replace(/^\//, ''))
+    );
+  });
+
   const handleSend = async (overridePrompt?: string, overrideAttachment?: ChatAttachment | null) => {
     const text = overridePrompt !== undefined ? overridePrompt.trim() : input.trim();
     const activeAttach = overrideAttachment !== undefined ? overrideAttachment : currentAttachment;
 
     if (overridePrompt === undefined && text.startsWith('/')) {
-      const [command, ...rest] = text.split(/\s+/);
-      const arg = rest.join(' ').trim();
-      if (command.toLowerCase() === '/build') {
-        if (!arg) { setInput(''); return; }
-        await handleSend(`Build this project request and return complete runnable code with a concise file plan: ${arg}`);
-        return;
-      }
-      if (command.toLowerCase() === '/clear') {
-        onUpdateMessages([]); setInput(''); setCurrentAttachment(null); return;
-      }
-      if (command.toLowerCase() === '/help') {
+      const trimmed = text.trim();
+      const lower = trimmed.toLowerCase();
+
+      if (lower === '/clear') {
+        if (onClearChat) {
+          onClearChat();
+        } else {
+          onUpdateMessages([]);
+        }
         setInput('');
-        onUpdateMessages([...messages, { id: `bot_${Date.now()}`, role: 'assistant', content: 'Commands: /build <request>, /clear, /help', timestamp: Date.now() }]);
+        setCurrentAttachment(null);
         return;
       }
+
+      if (lower === '/help') {
+        if (onExecuteCommand) {
+          onExecuteCommand('/help');
+        } else {
+          onUpdateMessages([
+            ...messages,
+            {
+              id: `bot_${Date.now()}`,
+              role: 'assistant',
+              content:
+                '### LUXION Command System\n- `/code <request>` — Coding-focused AI response & implementation\n- `/design <request>` — System & UI design specification\n- `/analyze <request>` — Deep technical & architectural analysis\n- `/build web <request>` — Web application scaffold workflow\n- `/build game <request>` — 2D canvas game scaffold workflow\n- `/clear` — Clear current screen\n- `/help` — Display command guide and keybindings',
+              timestamp: Date.now(),
+            },
+          ]);
+        }
+        setInput('');
+        return;
+      }
+    }
+
+    let activeCommand: string | undefined = undefined;
+    if (text.startsWith('/')) {
+      const lower = text.toLowerCase();
+      if (lower.startsWith('/build web')) activeCommand = '/build web';
+      else if (lower.startsWith('/build game')) activeCommand = '/build game';
+      else if (lower.startsWith('/build app') || lower.startsWith('/build website') || lower.startsWith('/build')) activeCommand = '/build web';
+      else if (lower.startsWith('/code')) activeCommand = '/code';
+      else if (lower.startsWith('/design')) activeCommand = '/design';
+      else if (lower.startsWith('/analyze')) activeCommand = '/analyze';
     }
 
     if ((!text && !activeAttach) || isLoading) return;
@@ -315,11 +492,8 @@ export const ChatView: React.FC<ChatViewProps> = ({
         }));
 
       const reply = onSendMessage
-        ? await onSendMessage(text, history, attachedSnapshot)
-        : await sendChatMessage(text, history, attachedSnapshot, undefined, {
-            personaMode: appSettings?.persona?.mode,
-            arroganceLevel: appSettings?.persona?.arroganceLevel,
-          });
+        ? await onSendMessage(text, history, attachedSnapshot, activeCommand)
+        : await sendChatMessage(text, history, attachedSnapshot, undefined, activeCommand);
 
       const botMessageId = `bot_${Date.now()}`;
       const botMessage: ChatMessage = {
@@ -332,16 +506,24 @@ export const ChatView: React.FC<ChatViewProps> = ({
       const updated = [...newMessages, botMessage];
       onUpdateMessages(updated);
 
-      if (voiceSettings.autoSpeak) {
+      if (isVoiceModeRef.current) {
+        setVoiceModeState('speaking');
         setTimeout(() => {
-          handleSpeak(botMessageId, reply);
-        }, 300);
+          handlePlay(botMessageId, reply);
+        }, 200);
+      } else if (voiceSettings.autoSpeak) {
+        setTimeout(() => {
+          handlePlay(botMessageId, reply);
+        }, 200);
       }
     } catch (err: any) {
+      if (isVoiceModeRef.current) {
+        setVoiceModeState('idle');
+      }
       const errorMessage: ChatMessage = {
         id: `err_${Date.now()}`,
         role: 'assistant',
-        content: err?.message || 'Unable to connect to AI engine. Please check your connection.',
+        content: err?.message || 'AI connection failed. Try again.',
         isError: true,
         timestamp: Date.now(),
       };
@@ -368,8 +550,53 @@ export const ChatView: React.FC<ChatViewProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (input.startsWith('/') && currentFilteredCommands.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setSelectedCommandIndex((prev) => (prev + 1) % currentFilteredCommands.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setSelectedCommandIndex(
+          (prev) => (prev - 1 + currentFilteredCommands.length) % currentFilteredCommands.length
+        );
+        return;
+      }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const chosen = currentFilteredCommands[selectedCommandIndex]?.command;
+        if (chosen) {
+          setInput(chosen);
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setInput('');
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      if (input.startsWith('/') && currentFilteredCommands.length > 0 && input.trim() === '/') {
+        const chosen = currentFilteredCommands[selectedCommandIndex]?.command;
+        if (chosen) {
+          if (chosen === '/clear') {
+            if (onClearChat) onClearChat();
+            setInput('');
+            return;
+          }
+          if (chosen === '/help') {
+            if (onExecuteCommand) onExecuteCommand('/help');
+            setInput('');
+            return;
+          }
+          setInput(`${chosen} `);
+          return;
+        }
+      }
       handleSend();
     }
   };
@@ -505,104 +732,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
       <div className="flex-1 overflow-y-auto px-4 py-6 sm:px-6">
         <div className="mx-auto max-w-3xl space-y-6">
           {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center min-h-[55vh] text-center select-none max-w-xl mx-auto px-4">
-              <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-tr from-cyan-950 via-neutral-900 to-indigo-950 border border-cyan-800/60 text-cyan-400 mb-4 shadow-xl shadow-cyan-950/40">
-                <svg
-                  className="h-7 w-7 text-cyan-300"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.75"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M12 2L2 7l10 5 10-5-10-5z" />
-                  <path d="M2 17l10 5 10-5" />
-                  <path d="M2 12l10 5 10-5" />
-                </svg>
-                <span className="absolute -bottom-1 -right-1 flex h-3 w-3">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-cyan-500" />
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2 mb-1.5">
-                <h2 className="text-xl font-bold text-neutral-100 tracking-[0.12em] font-sans">LUXION</h2>
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-950/80 text-cyan-300 border border-cyan-800/80">
-                  v3.5 Core
-                </span>
-              </div>
-
-              <p className="text-xs text-neutral-400 max-w-sm mb-6 leading-relaxed">
-                Autonomous personal AI with deep vocal presence. Ask anything—from 100% accurate anime MC lookups to full-stack code, math, and creative cyber stories.
-              </p>
-
-              {/* Starter Quick Actions */}
-              <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-2 text-left">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInput('Hey bro 👋');
-                    textareaRef.current?.focus();
-                  }}
-                  className="p-3 rounded-xl bg-neutral-900/60 hover:bg-neutral-900 border border-neutral-800 hover:border-cyan-500/50 transition-all group"
-                >
-                  <div className="text-xs font-semibold text-neutral-200 group-hover:text-cyan-300">
-                    Hey bro 👋
-                  </div>
-                  <div className="text-[11px] text-neutral-500 line-clamp-1">
-                    Direct casual greeting &amp; check-in
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInput('Death Note ka MC kaun hai?');
-                    textareaRef.current?.focus();
-                  }}
-                  className="p-3 rounded-xl bg-neutral-900/60 hover:bg-neutral-900 border border-neutral-800 hover:border-cyan-500/50 transition-all group"
-                >
-                  <div className="text-xs font-semibold text-neutral-200 group-hover:text-cyan-300">
-                    Death Note ka MC kaun hai?
-                  </div>
-                  <div className="text-[11px] text-neutral-500 line-clamp-1">
-                    Factual anime protagonist lookup
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInput('Who is Rimuru?');
-                    textareaRef.current?.focus();
-                  }}
-                  className="p-3 rounded-xl bg-neutral-900/60 hover:bg-neutral-900 border border-neutral-800 hover:border-cyan-500/50 transition-all group"
-                >
-                  <div className="text-xs font-semibold text-neutral-200 group-hover:text-cyan-300">
-                    Who is Rimuru?
-                  </div>
-                  <div className="text-[11px] text-neutral-500 line-clamp-1">
-                    Tensura Slime lore &amp; abilities
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInput('What can you do?');
-                    textareaRef.current?.focus();
-                  }}
-                  className="p-3 rounded-xl bg-neutral-900/60 hover:bg-neutral-900 border border-neutral-800 hover:border-cyan-500/50 transition-all group"
-                >
-                  <div className="text-xs font-semibold text-neutral-200 group-hover:text-cyan-300">
-                    What can you do?
-                  </div>
-                  <div className="text-[11px] text-neutral-500 line-clamp-1">
-                    Discover coding, reasoning &amp; tools
-                  </div>
-                </button>
-              </div>
+            <div className="flex flex-col items-center justify-center min-h-[58vh] text-center select-none max-w-xl mx-auto px-4">
+              <h1 className="text-3xl sm:text-4xl font-mono font-bold tracking-[0.28em] text-white">
+                LUXION
+              </h1>
             </div>
           ) : (
             messages.map((msg, index) => {
@@ -646,12 +779,12 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
                 >
                   <div
-                    className={`max-w-[92%] sm:max-w-[85%] rounded-2xl p-4 text-sm leading-relaxed ${
+                    className={`max-w-[92%] sm:max-w-[85%] rounded-xl p-4 text-xs sm:text-sm font-mono leading-relaxed ${
                       msg.isError
-                        ? 'bg-rose-950/30 text-rose-200 border border-rose-900/60 shadow-sm'
+                        ? 'bg-neutral-950 text-neutral-300 border border-neutral-700 shadow-sm'
                         : isUser
-                        ? 'bg-neutral-800 text-neutral-100 border border-neutral-700/60'
-                        : 'bg-neutral-900/90 text-neutral-200 border border-neutral-800/80 shadow-sm'
+                        ? 'bg-neutral-900 text-white border border-neutral-800'
+                        : 'bg-black text-neutral-200 border border-neutral-900 shadow-sm'
                     }`}
                   >
                     {msg.attachment?.type === 'image' && msg.attachment.dataUrl && (
@@ -683,17 +816,17 @@ export const ChatView: React.FC<ChatViewProps> = ({
                     )}
 
                     {msg.isError ? (
-                      <div className="space-y-2">
+                      <div className="space-y-2 font-mono">
                         <div className="flex items-start gap-2">
-                          <AlertCircle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-                          <div className="text-xs text-rose-300 whitespace-pre-wrap">
+                          <AlertCircle className="h-4 w-4 text-white shrink-0 mt-0.5" />
+                          <div className="text-xs text-neutral-300 whitespace-pre-wrap">
                             {msg.content}
                           </div>
                         </div>
                         <button
                           type="button"
                           onClick={handleRetryLast}
-                          className="flex items-center gap-1 text-[11px] font-medium text-rose-300 hover:text-white bg-rose-900/40 hover:bg-rose-900/70 border border-rose-700/50 px-2.5 py-1 rounded-lg transition-colors"
+                          className="flex items-center gap-1 text-[11px] font-medium text-white bg-neutral-900 hover:bg-neutral-800 border border-neutral-700 px-2.5 py-1 rounded transition-colors"
                         >
                           <RotateCcw className="h-3 w-3" />
                           <span>Retry</span>
@@ -762,28 +895,85 @@ export const ChatView: React.FC<ChatViewProps> = ({
                     {!isUser && !msg.isError && (
                       <div className="mt-3 flex items-center justify-between pt-2 border-t border-neutral-800/60 text-xs text-neutral-500">
                         <div className="flex items-center gap-1">
-                          <button
-                            type="button"
-                            onClick={() => handleSpeak(msg.id, msg.content)}
-                            className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors ${
-                              isSpeaking
-                                ? 'bg-neutral-800 text-white'
-                                : 'hover:bg-neutral-800 hover:text-neutral-300'
-                            }`}
-                            title={isSpeaking ? 'Stop speaking' : 'Read aloud'}
-                          >
-                            {isSpeaking ? (
-                              <>
-                                <Square className="h-3 w-3 fill-current" />
+                          {/* Minimal Speaker Controls with clearly differentiated Play, Pause, and Stop */}
+                          {speakingId === msg.id ? (
+                            <div className="flex items-center gap-1 rounded-md border border-neutral-800 bg-neutral-950 p-1 text-xs font-mono shadow-sm">
+                              {/* Minimal Status Indicator */}
+                              <div className="flex items-center gap-1.5 px-2 py-0.5 text-[10px] border-r border-neutral-800 select-none">
+                                <span
+                                  className={`h-1.5 w-1.5 rounded-full ${
+                                    playbackState === 'playing' ? 'bg-white animate-pulse' : 'bg-neutral-500'
+                                  }`}
+                                />
+                                <span className={playbackState === 'playing' ? 'text-white font-medium' : 'text-neutral-400'}>
+                                  {playbackState === 'playing' ? 'Playing' : 'Paused'}
+                                </span>
+                              </div>
+
+                              {/* Play / Resume Action */}
+                              <button
+                                type="button"
+                                onClick={() => handlePlay(msg.id, msg.content)}
+                                disabled={playbackState === 'playing'}
+                                className={`flex items-center gap-1 rounded px-2 py-0.5 text-xs transition-colors ${
+                                  playbackState === 'paused'
+                                    ? 'bg-white text-black font-semibold hover:bg-neutral-200'
+                                    : 'text-neutral-600 cursor-default opacity-40'
+                                }`}
+                                title={playbackState === 'paused' ? 'Resume playback' : 'Currently playing'}
+                              >
+                                <Play className="h-3 w-3 fill-current" />
+                                <span>Play</span>
+                              </button>
+
+                              {/* Pause Action */}
+                              <button
+                                type="button"
+                                onClick={handlePause}
+                                disabled={playbackState === 'paused'}
+                                className={`flex items-center gap-1 rounded px-2 py-0.5 text-xs transition-colors ${
+                                  playbackState === 'playing'
+                                    ? 'border border-neutral-700 bg-neutral-900 text-neutral-200 hover:bg-neutral-800 hover:text-white'
+                                    : 'text-neutral-600 cursor-default opacity-40'
+                                }`}
+                                title={playbackState === 'playing' ? 'Pause playback' : 'Currently paused'}
+                              >
+                                <Pause className="h-3 w-3 fill-current" />
+                                <span>Pause</span>
+                              </button>
+
+                              {/* Stop Action */}
+                              <button
+                                type="button"
+                                onClick={handleStop}
+                                className="flex items-center gap-1 rounded border border-neutral-800 bg-neutral-900/60 px-2 py-0.5 text-xs text-neutral-400 hover:border-neutral-700 hover:bg-neutral-800 hover:text-white transition-colors"
+                                title="Stop playback"
+                              >
+                                <Square className="h-2.5 w-2.5 fill-current" />
                                 <span>Stop</span>
-                              </>
-                            ) : (
-                              <>
-                                <Volume2 className="h-3.5 w-3.5" />
-                                <span>Listen</span>
-                              </>
-                            )}
-                          </button>
+                              </button>
+
+                              {/* Replay Action */}
+                              <button
+                                type="button"
+                                onClick={() => handleReplay(msg.id, msg.content)}
+                                className="flex items-center justify-center h-6 w-6 rounded text-neutral-400 hover:bg-neutral-800 hover:text-white transition-colors"
+                                title="Replay from start"
+                              >
+                                <RotateCcw className="h-3 w-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handlePlay(msg.id, msg.content)}
+                              className="flex items-center gap-1.5 rounded-md border border-neutral-800/80 bg-neutral-900/60 px-2.5 py-1 text-xs font-mono text-neutral-300 hover:border-neutral-700 hover:bg-neutral-800 hover:text-white transition-all"
+                              title="Play response aloud (Deep Male Voice)"
+                            >
+                              <Play className="h-3 w-3 fill-current" />
+                              <span>Play</span>
+                            </button>
+                          )}
 
                           <button
                             type="button"
@@ -901,10 +1091,47 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
       <div className="p-4 sm:p-6 bg-gradient-to-t from-neutral-950 via-neutral-950/90 to-transparent">
         <div className="mx-auto max-w-3xl">
-          {isListening && (
-            <div className="mb-2 flex items-center justify-between rounded-xl border border-neutral-700 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-300 animate-fade-in">
+          {isVoiceMode && (
+            <div className="mb-2 flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-950 px-3.5 py-2 text-xs font-mono animate-fade-in shadow-lg">
+              <div className="flex items-center gap-2.5">
+                {voiceModeState === 'listening' && (
+                  <>
+                    <span className="h-2 w-2 rounded-full bg-white animate-ping" />
+                    <span className="text-white font-medium">Listening...</span>
+                    <span className="text-neutral-500 text-[11px] hidden sm:inline">(Speak directly to LUXION)</span>
+                  </>
+                )}
+                {voiceModeState === 'thinking' && (
+                  <>
+                    <span className="h-2 w-2 rounded-full bg-neutral-400 animate-pulse" />
+                    <span className="text-neutral-300">Thinking...</span>
+                  </>
+                )}
+                {voiceModeState === 'speaking' && (
+                  <>
+                    <Volume2 className="h-3.5 w-3.5 text-white animate-pulse" />
+                    <span className="text-white font-medium">Speaking...</span>
+                  </>
+                )}
+                {voiceModeState === 'idle' && (
+                  <span className="text-neutral-400">Voice Mode Ready</span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={toggleVoiceMode}
+                className="text-[11px] text-neutral-400 hover:text-white px-2 py-0.5 rounded border border-neutral-800 hover:border-neutral-600 transition-colors"
+                title="Exit Voice Mode"
+              >
+                Exit Voice Mode
+              </button>
+            </div>
+          )}
+
+          {!isVoiceMode && isListening && (
+            <div className="mb-2 flex items-center justify-between rounded-xl border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-300 animate-fade-in">
               <div className="flex items-center gap-2">
-                <span className="h-2 w-2 rounded-full bg-red-500 animate-ping" />
+                <span className="h-2 w-2 rounded-full bg-white animate-ping" />
                 <span>Listening to microphone...</span>
               </div>
               <button
@@ -950,7 +1177,42 @@ export const ChatView: React.FC<ChatViewProps> = ({
             </div>
           )}
 
-          <div className="relative flex flex-col rounded-2xl border border-neutral-800 bg-neutral-900/95 shadow-xl focus-within:border-neutral-700 transition-colors">
+          <div className="relative flex flex-col rounded-xl border border-neutral-800 bg-black focus-within:border-neutral-600 transition-colors">
+            {/* Minimal Command Suggestion Palette */}
+            <CommandPalette
+              query={input}
+              isOpen={input.startsWith('/')}
+              selectedIndex={selectedCommandIndex}
+              onSelect={(cmd) => {
+                if (cmd === '/clear') {
+                  if (onClearChat) onClearChat();
+                  setInput('');
+                  return;
+                }
+                if (cmd === '/help') {
+                  if (onExecuteCommand) onExecuteCommand('/help');
+                  setInput('');
+                  return;
+                }
+                setInput(`${cmd} `);
+                if (textareaRef.current) {
+                  textareaRef.current.focus();
+                }
+              }}
+              onClose={() => setInput('')}
+            />
+
+            {input.startsWith('/') && (
+              <div className="px-4 pt-2.5 flex items-center gap-2 text-[10px] font-mono select-none">
+                <span className="px-1.5 py-0.5 rounded border border-neutral-700 bg-neutral-900 text-white font-bold">
+                  COMMAND
+                </span>
+                <span className="text-neutral-400">
+                  {input.trim() || '/'}
+                </span>
+              </div>
+            )}
+
             <textarea
               ref={textareaRef}
               id="chat-composer-input"
@@ -958,28 +1220,28 @@ export const ChatView: React.FC<ChatViewProps> = ({
               value={input}
               onChange={handleInputChange}
               onKeyDown={handleKeyDown}
-              placeholder={isListening ? 'Listening...' : 'Message LUXION...'}
-              className="w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-sm text-neutral-100 placeholder-neutral-500 focus:outline-none max-h-44"
+              placeholder={isListening ? 'Listening...' : 'Type / for commands, or message LUXION...'}
+              className="w-full resize-none bg-transparent px-4 pt-3 pb-2 text-xs sm:text-sm text-white placeholder-neutral-500 font-mono focus:outline-none max-h-44"
             />
 
-            <div className="flex items-center justify-between px-3 pb-2.5 pt-1">
+            <div className="flex items-center justify-between px-3 pb-2 pt-1 border-t border-neutral-900">
               <div className="relative" ref={plusMenuRef}>
                 <button
                   id="btn-composer-plus"
                   type="button"
                   onClick={() => setShowPlusMenu((prev) => !prev)}
-                  className={`flex h-8 w-8 items-center justify-center rounded-xl text-neutral-400 hover:text-white hover:bg-neutral-800 transition-colors ${
+                  className={`flex h-7 w-7 items-center justify-center rounded text-neutral-400 hover:text-white hover:bg-neutral-900 transition-colors ${
                     showPlusMenu ? 'bg-neutral-800 text-white' : ''
                   }`}
                   title="Attach file or image"
                 >
-                  <Plus className="h-4 w-4" />
+                  <Plus className="h-3.5 w-3.5" />
                 </button>
 
                 {showPlusMenu && (
                   <div
                     id="composer-plus-menu"
-                    className="absolute bottom-full left-0 mb-2 w-48 rounded-xl border border-neutral-800 bg-neutral-900 p-1 shadow-2xl z-30 animate-fade-in text-xs"
+                    className="absolute bottom-full left-0 mb-2 w-48 rounded-lg border border-neutral-800 bg-black p-1 shadow-2xl z-30 text-xs font-mono"
                   >
                     <button
                       type="button"
@@ -987,7 +1249,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                         setShowPlusMenu(false);
                         fileInputRef.current?.click();
                       }}
-                      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors text-left"
+                      className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-neutral-300 hover:bg-neutral-900 hover:text-white transition-colors text-left"
                     >
                       <Paperclip className="h-3.5 w-3.5 text-neutral-400" />
                       <span>Attach file / code</span>
@@ -999,7 +1261,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                         setShowPlusMenu(false);
                         imageInputRef.current?.click();
                       }}
-                      className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-neutral-300 hover:bg-neutral-800 hover:text-white transition-colors text-left"
+                      className="flex w-full items-center gap-2 rounded px-2.5 py-2 text-neutral-300 hover:bg-neutral-900 hover:text-white transition-colors text-left"
                     >
                       <ImageIcon className="h-3.5 w-3.5 text-neutral-400" />
                       <span>Upload image</span>
@@ -1010,17 +1272,32 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
               <div className="flex items-center gap-2">
                 <button
+                  id="btn-composer-voicemode"
+                  type="button"
+                  onClick={toggleVoiceMode}
+                  className={`flex h-7 items-center gap-1.5 px-2 rounded text-xs font-mono transition-colors ${
+                    isVoiceMode
+                      ? 'bg-white text-black font-semibold shadow-sm'
+                      : 'text-neutral-400 hover:text-white hover:bg-neutral-900 border border-neutral-800'
+                  }`}
+                  title={isVoiceMode ? 'Exit Hands-Free Voice Mode' : 'Enter Hands-Free Voice Mode'}
+                >
+                  <Headphones className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Voice Mode</span>
+                </button>
+
+                <button
                   id="btn-composer-voice"
                   type="button"
                   onClick={toggleListening}
-                  className={`flex h-8 w-8 items-center justify-center rounded-xl transition-colors ${
-                    isListening
-                      ? 'bg-red-500 text-white'
-                      : 'text-neutral-400 hover:text-white hover:bg-neutral-800'
+                  className={`flex h-7 w-7 items-center justify-center rounded transition-colors ${
+                    isListening && !isVoiceMode
+                      ? 'bg-white text-black'
+                      : 'text-neutral-400 hover:text-white hover:bg-neutral-900'
                   }`}
                   title={isListening ? 'Stop listening' : 'Voice input'}
                 >
-                  {isListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                  {isListening ? <MicOff className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
                 </button>
 
                 {isLoading ? (
@@ -1028,10 +1305,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
                     id="btn-composer-stop"
                     type="button"
                     onClick={handleStopGeneration}
-                    className="flex h-8 w-8 items-center justify-center rounded-xl bg-neutral-800 text-neutral-200 hover:bg-neutral-700 hover:text-white active:scale-95 transition-all"
+                    className="flex h-7 w-7 items-center justify-center rounded bg-neutral-900 border border-neutral-700 text-white hover:bg-neutral-800 transition-colors"
                     title="Stop generation"
                   >
-                    <Square className="h-3.5 w-3.5 fill-current" />
+                    <Square className="h-3 w-3 fill-current" />
                   </button>
                 ) : (
                   <button
@@ -1039,10 +1316,10 @@ export const ChatView: React.FC<ChatViewProps> = ({
                     type="button"
                     onClick={() => handleSend()}
                     disabled={!input.trim() && !currentAttachment}
-                    className="flex h-8 w-8 items-center justify-center rounded-xl bg-neutral-100 text-neutral-950 hover:bg-white active:scale-95 disabled:opacity-30 disabled:hover:bg-neutral-100 transition-all"
-                    title="Send message"
+                    className="flex h-7 w-7 items-center justify-center rounded bg-white text-black hover:bg-neutral-200 active:scale-95 disabled:opacity-30 disabled:hover:bg-white transition-all"
+                    title="Send message or run command"
                   >
-                    <ArrowUp className="h-4 w-4 stroke-[2.5]" />
+                    <ArrowUp className="h-3.5 w-3.5 stroke-[2.5]" />
                   </button>
                 )}
               </div>

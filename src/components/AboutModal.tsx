@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Sparkles, Cpu, HardDrive, Volume2, ShieldCheck, UserCheck } from 'lucide-react';
+import { X, Cpu, HardDrive, Volume2, ShieldCheck, UserCheck } from 'lucide-react';
 
 interface AboutModalProps {
   isOpen: boolean;
@@ -12,23 +12,19 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
   return (
     <div
       id="modal-about-overlay"
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-md animate-fade-in"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-fade-in font-mono"
       onClick={onClose}
     >
       <div
         id="modal-about-card"
         onClick={(e) => e.stopPropagation()}
-        className="relative w-full max-w-md rounded-2xl border border-neutral-800 bg-neutral-950 p-6 sm:p-7 shadow-2xl text-left overflow-hidden"
+        className="relative w-full max-w-md rounded-xl border border-neutral-800 bg-black p-6 shadow-2xl text-left overflow-hidden text-white"
       >
-        {/* Subtle Ambient Radial Glow */}
-        <div className="absolute -top-24 -right-24 h-48 w-48 rounded-full bg-cyan-600/10 blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-24 -left-24 h-48 w-48 rounded-full bg-indigo-600/10 blur-3xl pointer-events-none" />
-
         {/* Close Button */}
         <button
           id="btn-close-about-modal"
           onClick={onClose}
-          className="absolute top-5 right-5 rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-800/80 hover:text-white transition-colors"
+          className="absolute top-4 right-4 rounded p-1 text-neutral-400 hover:bg-neutral-900 hover:text-white transition-colors"
           title="Close dialog"
           aria-label="Close"
         >
@@ -36,99 +32,84 @@ export const AboutModal: React.FC<AboutModalProps> = ({ isOpen, onClose }) => {
         </button>
 
         {/* Header Branding */}
-        <div className="flex items-center gap-3.5 mb-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-600 via-indigo-600 to-neutral-900 border border-cyan-500/40 text-white shadow-lg shadow-cyan-500/15">
-            <svg
-              className="h-6 w-6 text-white"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 2L2 7l10 5 10-5-10-5z" />
-              <path d="M2 17l10 5 10-5" />
-              <path d="M2 12l10 5 10-5" />
-            </svg>
-          </div>
+        <div className="flex items-center gap-3 mb-4">
           <div>
             <div className="flex items-center gap-2">
-              <h2 className="text-xl font-bold tracking-[0.16em] text-neutral-100 font-sans">
+              <h2 className="text-xl font-bold tracking-[0.2em] text-white">
                 LUXION
               </h2>
-              <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800/60">
-                v3.5.2 Pro
+              <span className="text-[10px] px-1.5 py-0.5 rounded border border-neutral-700 bg-neutral-900 text-neutral-300">
+                PROTOTYPE
               </span>
             </div>
-            <p className="text-xs text-neutral-400 font-medium">Clean, intelligent AI.</p>
+            <p className="text-xs text-neutral-400 mt-1">Clean, command-based developer interface.</p>
           </div>
         </div>
 
-        {/* Original Description */}
-        <p className="text-xs text-neutral-300 leading-relaxed mb-5">
-          LUXION is an independent, high-performance AI assistant designed for clarity, deep factual precision, interactive live code generation, and direct conversational intelligence without corporate fluff or external trackers.
+        {/* Description */}
+        <p className="text-xs text-neutral-300 leading-relaxed mb-4">
+          LUXION is a minimal, monochrome interface designed for fast workflow execution, command-driven project scaffolds, and interactive sandboxes.
         </p>
 
-        {/* Founder & Creator Showcase */}
-        <div className="mb-4 rounded-xl border border-neutral-800/90 bg-neutral-900/60 p-3.5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-neutral-800 border border-neutral-700/60 text-cyan-400">
+        {/* Founder & Creator */}
+        <div className="mb-4 rounded-lg border border-neutral-800 bg-neutral-950 p-3 flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded border border-neutral-800 bg-neutral-900 text-white">
               <UserCheck className="h-4 w-4" />
             </div>
             <div>
-              <p className="text-[10px] uppercase font-mono tracking-wider text-neutral-400 font-semibold">
-                Founder &amp; Creator
+              <p className="text-[9px] uppercase tracking-wider text-neutral-400 font-semibold">
+                FOUNDER &amp; ARCHITECT
               </p>
-              <p className="text-sm font-semibold text-neutral-100">Abir</p>
+              <p className="text-xs font-semibold text-white">Abir Middya</p>
             </div>
           </div>
-          <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/40">
-            Original Architect
+          <span className="text-[10px] text-neutral-300 bg-neutral-900 px-2 py-0.5 rounded border border-neutral-800">
+            LUXION Original
           </span>
         </div>
 
-        {/* Core Architecture Status Badges */}
-        <div className="rounded-xl border border-neutral-800/80 bg-neutral-900/40 p-3.5 space-y-2.5">
-          <div className="flex items-center justify-between text-xs">
-            <span className="flex items-center gap-2 text-neutral-400 font-medium">
-              <Cpu className="h-3.5 w-3.5 text-cyan-400" />
-              Response Engine
+        {/* Architecture Status */}
+        <div className="rounded-lg border border-neutral-800 bg-neutral-950 p-3 space-y-2 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-2 text-neutral-400">
+              <Cpu className="h-3.5 w-3.5 text-white" />
+              Build Engine
             </span>
-            <span className="text-neutral-200 font-mono text-[11px]">LUXION 3.5 Cognitive Core</span>
+            <span className="text-neutral-200 text-[11px]">Command Scaffold Engine</span>
           </div>
 
-          <div className="border-t border-neutral-800/60 pt-2 flex items-center justify-between text-xs">
-            <span className="flex items-center gap-2 text-neutral-400 font-medium">
-              <HardDrive className="h-3.5 w-3.5 text-indigo-400" />
+          <div className="border-t border-neutral-900 pt-2 flex items-center justify-between">
+            <span className="flex items-center gap-2 text-neutral-400">
+              <HardDrive className="h-3.5 w-3.5 text-white" />
               Memory State
             </span>
-            <span className="text-emerald-400 font-mono text-[11px] flex items-center gap-1">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-              Active Context Store
+            <span className="text-neutral-200 text-[11px] flex items-center gap-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-white" />
+              Local Client Persistence
             </span>
           </div>
 
-          <div className="border-t border-neutral-800/60 pt-2 flex items-center justify-between text-xs">
-            <span className="flex items-center gap-2 text-neutral-400 font-medium">
-              <Volume2 className="h-3.5 w-3.5 text-purple-400" />
-              Voice / TTS System
+          <div className="border-t border-neutral-900 pt-2 flex items-center justify-between">
+            <span className="flex items-center gap-2 text-neutral-400">
+              <Volume2 className="h-3.5 w-3.5 text-white" />
+              Voice Synthesis
             </span>
-            <span className="text-neutral-200 font-mono text-[11px]">Hardware Web Speech</span>
+            <span className="text-neutral-200 text-[11px]">Web Speech API</span>
           </div>
 
-          <div className="border-t border-neutral-800/60 pt-2 flex items-center justify-between text-xs">
-            <span className="flex items-center gap-2 text-neutral-400 font-medium">
-              <ShieldCheck className="h-3.5 w-3.5 text-emerald-400" />
-              Privacy &amp; Security
+          <div className="border-t border-neutral-900 pt-2 flex items-center justify-between">
+            <span className="flex items-center gap-2 text-neutral-400">
+              <ShieldCheck className="h-3.5 w-3.5 text-white" />
+              Privacy &amp; Telemetry
             </span>
-            <span className="text-neutral-300 font-mono text-[11px]">Client Encrypted • Zero Telemetry</span>
+            <span className="text-neutral-200 text-[11px]">Zero Tracking • Client Only</span>
           </div>
         </div>
 
         {/* Footer info */}
-        <div className="mt-5 flex items-center justify-between text-[11px] text-neutral-500 pt-2 border-t border-neutral-800/80">
-          <span>Build 2026.09-REL</span>
+        <div className="mt-4 flex items-center justify-between text-[10px] text-neutral-500 pt-2 border-t border-neutral-900">
+          <span>LUXION CORE 2026</span>
           <span>Engineered by Abir</span>
         </div>
       </div>

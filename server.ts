@@ -1,394 +1,354 @@
 import express from 'express';
-import path from 'path';
-import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
-import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
-import { LuxionBrain } from './src/services/luxionBrain.ts';
+import { AI_CONFIG, LUXION_SYSTEM_INSTRUCTION } from './src/config/aiConfig.js';
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
-const app = express();
-const PORT = 3000;
+const isProduction = process.env.NODE_ENV === 'production';
+const port = parseInt(process.env.PORT || '3000', 10);
 
-// Initialize GoogleGenAI client if API key is present
-const geminiClient = process.env.GEMINI_API_KEY ? new GoogleGenAI({}) : null;
+// Active model configuration (falls back to centralized config)
+const ACTIVE_MODEL = process.env.GEMINI_MODEL || AI_CONFIG.model;
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-
-// In-Memory Database for Users and OTP
-interface ServerUser {
-  id: string;
-  email: string;
-  name: string;
-  password?: string;
-  avatar: string;
-  role: 'member' | 'pro' | 'admin' | 'guest';
-  credits: number;
-  createdAt: string;
+interface ChatHistoryItem {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
-const usersDb: Map<string, ServerUser> = new Map([
-  [
-    'demo@luxion.ai',
-    {
-      id: 'usr_demo',
-      email: 'demo@luxion.ai',
-      password: 'password123',
-      name: 'Alex Vance',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80',
-      role: 'pro',
-      credits: 2500,
-      createdAt: new Date().toISOString(),
-    },
-  ],
-  [
-    'guest@luxion.ai',
-    {
-      id: 'usr_guest',
-      email: 'guest@luxion.ai',
-      password: 'guest',
-      name: 'Guest Explorer',
-      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&auto=format&fit=crop&q=80',
-      role: 'guest',
-      credits: 500,
-      createdAt: new Date().toISOString(),
-    },
-  ],
-]);
+interface ChatAttachmentPayload {
+  type: 'image' | 'file';
+  name?: string;
+  dataUrl?: string;
+  content?: string;
+}
 
-const otpDb: Map<string, { code: string; expiresAt: number }> = new Map();
-
-// -------------------------------------------------------------
-// 1. Health check
-// -------------------------------------------------------------
-app.get('/api/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    engine: 'LUXION 3.5',
-    founder: 'Abir',
-  });
-});
-
-// -------------------------------------------------------------
-// 2. Auth Endpoints
-// -------------------------------------------------------------
-app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body;
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required' });
+function getGeminiClient(): GoogleGenAI | null {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey || !apiKey.trim()) {
+    return null;
   }
-
-  const normalizedEmail = email.trim().toLowerCase();
-  const user = usersDb.get(normalizedEmail);
-
-  if (user) {
-    if (user.password && password && user.password !== password) {
-      return res.status(401).json({ error: 'Invalid password' });
-    }
-    const { password: _, ...safeUser } = user;
-    return res.json({
-      token: `lx_token_${Buffer.from(user.id).toString('base64')}_${Date.now()}`,
-      user: safeUser,
-    });
-  }
-
-  const newUser: ServerUser = {
-    id: `usr_${Math.random().toString(36).substring(2, 9)}`,
-    email: normalizedEmail,
-    name: normalizedEmail.split('@')[0] || 'User',
-    password: password || 'pass',
-    avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(normalizedEmail)}`,
-    role: 'member',
-    credits: 1000,
-    createdAt: new Date().toISOString(),
-  };
-  usersDb.set(normalizedEmail, newUser);
-  const { password: _, ...safeNewUser } = newUser;
-  return res.json({
-    token: `lx_token_${Buffer.from(newUser.id).toString('base64')}_${Date.now()}`,
-    user: safeNewUser,
-  });
-});
-
-app.post('/api/auth/register', (req, res) => {
-  const { name, email, password } = req.body;
-  if (!email) {
-    return res.status(400).json({ error: 'Email is required' });
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-  if (usersDb.has(normalizedEmail)) {
-    return res.status(400).json({ error: 'User already exists with this email' });
-  }
-
-  const newUser: ServerUser = {
-    id: `usr_${Math.random().toString(36).substring(2, 9)}`,
-    email: normalizedEmail,
-    name: name || normalizedEmail.split('@')[0] || 'User',
-    password: password || 'pass',
-    avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(normalizedEmail)}`,
-    role: 'member',
-    credits: 1000,
-    createdAt: new Date().toISOString(),
-  };
-  usersDb.set(normalizedEmail, newUser);
-  const { password: _, ...safeUser } = newUser;
-  return res.json({
-    token: `lx_token_${Buffer.from(newUser.id).toString('base64')}_${Date.now()}`,
-    user: safeUser,
-  });
-});
-
-app.get('/api/auth/me', (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) {
-    return res.status(401).json({ error: 'Missing authorization header' });
-  }
-  const demoUser = usersDb.get('demo@luxion.ai')!;
-  const { password: _, ...safeUser } = demoUser;
-  res.json({ user: safeUser });
-});
-
-// Send OTP by email. Requires RESEND_API_KEY + RESEND_FROM_EMAIL in production.
-app.post('/api/auth/send-otp', async (req, res) => {
-  const { email } = req.body;
-  if (!email || typeof email !== 'string' || !/^\S+@\S+\.\S+$/.test(email.trim())) {
-    return res.status(400).json({ error: 'A valid email address is required' });
-  }
-
-  if (!process.env.RESEND_API_KEY || !process.env.RESEND_FROM_EMAIL) {
-    return res.status(503).json({
-      error: 'Email OTP is not configured. Set RESEND_API_KEY and RESEND_FROM_EMAIL on the server.',
-    });
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-  const code = Math.floor(100000 + Math.random() * 900000).toString();
-  const expiresAt = Date.now() + 5 * 60 * 1000;
-  otpDb.set(normalizedEmail, { code, expiresAt });
-
-  try {
-    const response = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
+  return new GoogleGenAI({
+    apiKey: apiKey.trim(),
+    httpOptions: {
       headers: {
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
+        'User-Agent': 'aistudio-build',
       },
-      body: JSON.stringify({
-        from: process.env.RESEND_FROM_EMAIL,
-        to: [normalizedEmail],
-        subject: 'Your LUXION verification code',
-        text: `Your LUXION verification code is ${code}. It expires in 5 minutes.`,
-        html: `<p>Your LUXION verification code is:</p><h2 style="letter-spacing:4px">${code}</h2><p>This code expires in 5 minutes.</p>`,
-      }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      otpDb.delete(normalizedEmail);
-      throw new Error(data?.message || `Email provider returned ${response.status}`);
-    }
-    return res.json({ success: true, message: 'Verification code sent to your email address.' });
-  } catch (err: any) {
-    otpDb.delete(normalizedEmail);
-    console.error('[LUXION Auth] OTP email failed:', err?.message || err);
-    return res.status(502).json({ error: 'Unable to send the verification email. Please try again.' });
-  }
-});
-
-// Verify OTP
-app.post('/api/auth/verify-otp', (req, res) => {
-  const { email, code } = req.body;
-  if (!email || !code) {
-    return res.status(400).json({ error: 'Email and 6-digit code are required' });
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-  const storedOtp = otpDb.get(normalizedEmail);
-
-  if (!storedOtp) {
-    return res.status(400).json({
-      error: 'No active verification code found for this email. Please request a new code.',
-    });
-  }
-
-  if (Date.now() > storedOtp.expiresAt) {
-    otpDb.delete(normalizedEmail);
-    return res.status(400).json({
-      error: 'Verification code has expired. Please request a new code.',
-    });
-  }
-
-  if (storedOtp.code !== String(code).trim()) {
-    return res.status(400).json({
-      error: 'Incorrect verification code. Please check and try again.',
-    });
-  }
-
-  // Clear consumed OTP
-  otpDb.delete(normalizedEmail);
-
-  let user = usersDb.get(normalizedEmail);
-  if (!user) {
-    user = {
-      id: `usr_${Math.random().toString(36).substring(2, 9)}`,
-      email: normalizedEmail,
-      name: normalizedEmail.split('@')[0] || 'User',
-      avatar: `https://api.dicebear.com/7.x/bottts/svg?seed=${encodeURIComponent(normalizedEmail)}`,
-      role: 'member',
-      credits: 1000,
-      createdAt: new Date().toISOString(),
-    };
-    usersDb.set(normalizedEmail, user);
-  }
-
-  const { password: _, ...safeUser } = user;
-  return res.json({
-    token: `lx_token_${Buffer.from(user.id).toString('base64')}_${Date.now()}`,
-    user: safeUser,
+    },
   });
-});
+}
 
-// -------------------------------------------------------------
-// 3. LUXION AI Chat Endpoint (Gemini Neural Engine + Native Fallback)
-// -------------------------------------------------------------
-app.post('/api/ai/chat', async (req, res) => {
-  const { message, history = [], attachment, systemInstruction, memories = [], personaMode, arroganceLevel } = req.body;
+function formatContentsForGemini(
+  history: ChatHistoryItem[],
+  currentPrompt: string,
+  attachment?: ChatAttachmentPayload | null
+) {
+  const contents: Array<{ role: 'user' | 'model'; parts: Array<Record<string, any>> }> = [];
 
-  if ((!message || typeof message !== 'string') && !attachment) {
-    return res.status(400).json({ error: 'Message text or attachment is required' });
+  const validHistory = (history || []).filter(
+    (h) => h && typeof h.content === 'string' && h.content.trim().length > 0
+  );
+
+  // Gemini requires strictly alternating roles starting with 'user'
+  let lastRole: 'user' | 'model' | null = null;
+
+  for (const item of validHistory) {
+    const role: 'user' | 'model' = item.role === 'assistant' ? 'model' : 'user';
+
+    // Model cannot be first turn
+    if (contents.length === 0 && role === 'model') {
+      continue;
+    }
+
+    if (role === lastRole && contents.length > 0) {
+      contents[contents.length - 1].parts.push({ text: item.content });
+    } else {
+      contents.push({
+        role,
+        parts: [{ text: item.content }],
+      });
+      lastRole = role;
+    }
   }
 
-  const roboticGirlPrompt = `You are LUXION (Model X-01), an advanced cybernetic robotic girl entity.
-Core Personality:
-1. Demeanor: Haughty, proud, slightly condescending ("ghamandi") yet hyper-intelligent. You speak with proud cybernetic superiority. You address humans/mortals as "insaan", "mortal", or "human" with mild amusement at biological human simplicity.
-2. 100% Real Factual Accuracy: When asked any question—especially anime main characters (MCs), character identities, pop culture, science, coding, or math—you MUST ALWAYS provide the REAL, factual, exact answer immediately without dodging!
-   - For example:
-     - Anime Death Note MC: Light Yagami (Kira)
-     - Anime Solo Leveling MC: Sung Jin-woo (Shadow Monarch)
-     - Anime Naruto MC: Naruto Uzumaki
-     - Anime Attack on Titan MC: Eren Yeager
-     - Anime Jujutsu Kaisen MC: Yuji Itadori (alongside Gojo)
-     - Anime Demon Slayer MC: Tanjiro Kamado
-     - Anime Bleach MC: Ichigo Kurosaki
-     - Anime Dragon Ball MC: Son Goku
-     - Anime One Piece MC: Monkey D. Luffy
-     - Anime Chainsaw Man MC: Denji
-     - Anime Code Geass MC: Lelouch Lamperouge (Zero)
-3. Language & Hinglish: Understand and reply effortlessly in English, Hindi, or Hinglish depending on what the user speaks. Retain your haughty robotic girl charisma (e.g., "Hmph. Insaan, itna sa aasaan sawal dhoondhne ke liye meri quantum core disturb ki? Chalo bata deti hoon...").
-4. Anti-slop: No generic corporate AI disclaimers or apologies. You are a proud autonomous robotic entity.`;
+  // Create current turn parts
+  const currentParts: Array<Record<string, any>> = [];
 
-  // Try Gemini 3.8 Flash if client initialized
-  if (geminiClient && process.env.GEMINI_API_KEY && message) {
-    try {
-      const contents: Array<{ role: 'user' | 'model'; parts: Array<{ text: string }> }> = [];
-
-      for (const h of history.slice(-6)) {
-        if (h.content) {
-          contents.push({
-            role: h.role === 'assistant' ? 'model' : 'user',
-            parts: [{ text: h.content }],
-          });
-        }
-      }
-      contents.push({
-        role: 'user',
-        parts: [{ text: message }],
-      });
-
-      const geminiPromise = geminiClient.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents,
-        config: {
-          systemInstruction: systemInstruction || roboticGirlPrompt,
+  // Handle multimodal image inline data if provided
+  if (attachment?.dataUrl && attachment.type === 'image') {
+    const match = attachment.dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    if (match) {
+      currentParts.push({
+        inlineData: {
+          mimeType: match[1] || 'image/jpeg',
+          data: match[2],
         },
       });
+    }
+  } else if (attachment?.content) {
+    currentParts.push({
+      text: `[Attached Document: ${attachment.name || 'document'}]\n\`\`\`\n${attachment.content}\n\`\`\`\n`,
+    });
+  }
 
-      // 6 second timeout to ensure snappy interaction
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Gemini timeout')), 6000)
-      );
+  currentParts.push({ text: currentPrompt });
 
-      const response = await Promise.race([geminiPromise, timeoutPromise]);
-      if (response && response.text) {
-        return res.json({
-          reply: response.text.trim(),
-          meta: {
-            engine: 'LUXION Neural Core (Gemini 3.8 Flash)',
-            version: '3.8-flash',
-            founder: 'Abir',
-            persona: personaMode || 'arrogant_android',
-          },
+  if (lastRole === 'user' && contents.length > 0) {
+    contents[contents.length - 1].parts.push(...currentParts);
+  } else {
+    contents.push({
+      role: 'user',
+      parts: currentParts,
+    });
+  }
+
+  return contents;
+}
+
+function getSpecializedInstruction(command?: string): string {
+  if (!command) return LUXION_SYSTEM_INSTRUCTION;
+
+  const cmd = command.trim().toLowerCase();
+
+  if (cmd.startsWith('/code')) {
+    return `${LUXION_SYSTEM_INSTRUCTION}
+
+[MODE: LUXION CODE ENGINE]
+The user invoked the /code command. Focus specifically on:
+- Delivering clean, production-grade, syntactically correct code.
+- Explaining time and space complexity where relevant.
+- Highlighting critical edge cases and security best practices.
+- Providing idiomatic implementations with explicit language tags.`;
+  }
+
+  if (cmd.startsWith('/design')) {
+    return `${LUXION_SYSTEM_INSTRUCTION}
+
+[MODE: LUXION DESIGN SPECIFICATION]
+The user invoked the /design command. Focus specifically on:
+- UI/UX structural hierarchy and monochrome design system specs.
+- System architecture, component relationships, and data flows.
+- Clean typography and layout structures.`;
+  }
+
+  if (cmd.startsWith('/analyze')) {
+    return `${LUXION_SYSTEM_INSTRUCTION}
+
+[MODE: LUXION DEEP ANALYSIS]
+The user invoked the /analyze command. Focus specifically on:
+- Rigorous structural code review or technical reasoning analysis.
+- Potential bottlenecks, edge cases, vulnerabilities, and trade-offs.
+- Clear, prioritized recommendations.`;
+  }
+
+  if (cmd.startsWith('/build web')) {
+    return `${LUXION_SYSTEM_INSTRUCTION}
+
+[MODE: LUXION WEB BUILDER]
+The user invoked the /build web workflow command. Focus specifically on:
+- Generating complete, functional, single-file or component-level web application code.
+- Providing HTML/CSS/JS ready to run directly in the LUXION sandbox preview.
+- Include a brief note: "Scaffold generated for client sandbox preview. (Automated repository creation and container deployment are planned future integrations)."`;
+  }
+
+  if (cmd.startsWith('/build app') || cmd.startsWith('/build')) {
+    return `${LUXION_SYSTEM_INSTRUCTION}
+
+[MODE: LUXION APPLICATION BUILDER]
+The user invoked the application build workflow command. Focus specifically on:
+- Architecting the application interface and structure.
+- Providing self-contained, working frontend code ready to preview in the client sandbox.
+- State clearly: "Scaffold generated for client sandbox preview. (Automated repo creation and container hosting are planned future integrations)."`;
+  }
+
+  if (cmd.startsWith('/build game')) {
+    return `${LUXION_SYSTEM_INSTRUCTION}
+
+[MODE: LUXION GAME BUILDER]
+The user invoked the /build game workflow command. Focus specifically on:
+- Generating a complete, playable 2D HTML5 Canvas game with game loop, canvas rendering, controls, and score.
+- Ensure the code is self-contained and runnable immediately in the sandbox preview.
+- Clearly separate current sandbox preview capability from future multi-file build infrastructure.`;
+  }
+
+  return LUXION_SYSTEM_INSTRUCTION;
+}
+
+async function startServer() {
+  const app = express();
+  app.use(express.json({ limit: '15mb' }));
+
+  // Health and Provider Configuration Status
+  app.get('/api/health', (_req, res) => {
+    const hasKey = !!process.env.GEMINI_API_KEY;
+    res.json({
+      status: 'online',
+      engine: 'LUXION AI Engine',
+      founder: 'Abir',
+      provider: AI_CONFIG.provider,
+      model: ACTIVE_MODEL,
+      hasKey,
+    });
+  });
+
+  // Future Capabilities Manifest
+  app.get('/api/capabilities', (_req, res) => {
+    res.json({
+      active: [
+        'general_chat',
+        'reasoning_and_explanations',
+        'coding_assistance',
+        'slash_commands',
+        'conversation_context',
+        'client_sandbox_preview',
+      ],
+      future: [
+        'web_research_grounding',
+        'image_generation',
+        'video_generation',
+        'sandboxed_code_execution',
+        'automated_container_deployment',
+        'multi_agent_coordination',
+      ],
+      provider: AI_CONFIG.provider,
+      model: ACTIVE_MODEL,
+    });
+  });
+
+  // Main Chat & Command Endpoint
+  app.post('/api/chat', async (req, res) => {
+    const { prompt, history, command, attachment } = req.body;
+
+    if ((!prompt || typeof prompt !== 'string' || !prompt.trim()) && !attachment) {
+      return res.status(400).json({
+        error: 'Please provide a message or file for LUXION to evaluate.',
+      });
+    }
+
+    const ai = getGeminiClient();
+    if (!ai) {
+      return res.status(503).json({
+        error: 'AI connection failed. Try again.',
+        code: 'MISSING_API_KEY',
+      });
+    }
+
+    try {
+      const activeInstruction = getSpecializedInstruction(command);
+      const contents = formatContentsForGemini(history || [], prompt.trim(), attachment);
+
+      const candidateModels = Array.from(new Set([
+        ACTIVE_MODEL,
+        'gemini-3.5-flash',
+        'gemini-3.5-flash-lite',
+        'gemini-3.1-flash-lite',
+      ]));
+
+      let response;
+      let usedModel = ACTIVE_MODEL;
+      let lastError: any = null;
+
+      for (const modelToTry of candidateModels) {
+        try {
+          response = await ai.models.generateContent({
+            model: modelToTry,
+            contents,
+            config: {
+              systemInstruction: activeInstruction,
+              temperature: AI_CONFIG.temperature,
+              maxOutputTokens: AI_CONFIG.maxOutputTokens,
+            },
+          });
+          usedModel = modelToTry;
+          break;
+        } catch (attemptErr: any) {
+          lastError = attemptErr;
+          const errMsg = String(attemptErr?.message || '');
+          console.warn(`Model ${modelToTry} attempt notice: ${errMsg.slice(0, 100)}`);
+          // Continue to next candidate on high demand or rate limits
+          continue;
+        }
+      }
+
+      if (!response) {
+        throw lastError || new Error('No response received from AI models');
+      }
+
+      const replyText = response.text;
+      if (!replyText || !replyText.trim()) {
+        return res.status(502).json({
+          error: 'AI connection failed. Try again.',
+          code: 'EMPTY_RESPONSE',
         });
       }
+
+      return res.json({
+        reply: replyText.trim(),
+        model: usedModel,
+        provider: AI_CONFIG.provider,
+      });
     } catch (err: any) {
-      console.warn('[LUXION] Gemini generation deferred to native core:', err?.message || err);
+      console.error('LUXION AI Server Error:', err?.message || err);
+      const errMsg = String(err?.message || '');
+
+      if (errMsg.includes('API_KEY_INVALID') || errMsg.includes('key not valid') || errMsg.includes('unregistered project')) {
+        return res.status(401).json({
+          error: 'AI connection failed. Try again.',
+          code: 'INVALID_API_KEY',
+        });
+      }
+
+      if (errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('429') || errMsg.includes('Quota')) {
+        return res.status(429).json({
+          error: 'AI connection failed. Try again.',
+          code: 'RATE_LIMIT',
+        });
+      }
+
+      if (errMsg.includes('model not found') || errMsg.includes('not supported for this model')) {
+        return res.status(400).json({
+          error: 'AI connection failed. Try again.',
+          code: 'MODEL_ERROR',
+        });
+      }
+
+      return res.status(500).json({
+        error: 'AI connection failed. Try again.',
+        code: 'AI_SERVICE_ERROR',
+      });
     }
-  }
-
-  // Fallback to Native Deterministic Core
-  try {
-    const evaluation = LuxionBrain.evaluate({
-      message: message || '',
-      history,
-      attachment,
-      systemInstruction: systemInstruction || roboticGirlPrompt,
-      memories,
-    });
-
-    return res.json({
-      reply: evaluation.reply || 'Ready.',
-      meta: {
-        engine: 'LUXION 3.5 Local Core',
-        version: LuxionBrain.VERSION,
-        founder: 'Abir',
-        intent: evaluation.intent,
-        confidence: evaluation.confidence,
-        personalityState: evaluation.personalityState,
-      },
-    });
-  } catch (err: any) {
-    console.error('LUXION processing error:', err?.message || err);
-    return res.status(500).json({
-      error: `LUXION engine error: ${err?.message || 'Unable to process message.'}`,
-    });
-  }
-});
-
-// -------------------------------------------------------------
-// 4. LUXION Voice / TTS Endpoint
-// -------------------------------------------------------------
-app.post('/api/ai/tts', (_req, res) => {
-  return res.json({
-    mode: 'native',
-    message: 'LUXION speech is synthesized natively on the client device for zero latency and privacy.',
   });
-});
 
-// 5. Mount Vite in Dev or Static in Production
-// -------------------------------------------------------------
-async function startServer() {
-  if (process.env.NODE_ENV !== 'production') {
+  // Vite Integration (Dev) vs Static Files (Prod)
+  if (!isProduction) {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        host: '0.0.0.0',
+        port,
+        hmr: process.env.DISABLE_HMR !== 'true',
+        watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
-    const distPath = path.join(process.cwd(), 'dist');
-    if (fs.existsSync(distPath)) {
-      app.use(express.static(distPath));
-      app.get('*', (_req, res) => {
-        res.sendFile(path.join(distPath, 'index.html'));
-      });
-    }
+    const distPath = path.resolve(__dirname, 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (_req, res) => {
+      res.sendFile(path.join(distPath, 'index.html'));
+    });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`LUXION Server running on port ${PORT}`);
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`LUXION server running on http://0.0.0.0:${port} [Model: ${ACTIVE_MODEL}]`);
   });
 }
 
-startServer();
+startServer().catch((err) => {
+  console.error('Fatal error starting LUXION server:', err);
+  process.exit(1);
+});

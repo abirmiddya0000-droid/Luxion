@@ -51,16 +51,20 @@ export interface VoiceSettings {
 }
 
 export type PersonaMode =
-  | 'arrogant_android'   // Haughty robotic girl ("Ghamandi", sharp, proud)
-  | 'cold_machine'       // Zero emotion, ruthless efficiency
-  | 'cyber_tsundere'     // Tsundere android: haughty exterior, secretly helpful
-  | 'supreme_empress';   // Overlord AI: treats humans like cute amusing pets
+  | 'intelligent'        // Clean, insightful, calm, and professional (Default)
+  | 'analytical'         // High-density precision, code and technical focus
+  | 'creative'           // Rich narrative, exploratory ideas, articulate
+  | 'direct'             // Highly concise, no fluff, immediate answers
+  | 'arrogant_android'   // Legacy compatibility
+  | 'cold_machine'       // Legacy compatibility
+  | 'cyber_tsundere'     // Legacy compatibility
+  | 'supreme_empress';   // Legacy compatibility
 
 export interface PersonaSettings {
   mode: PersonaMode;
-  arroganceLevel: number; // 1 to 5 (1 = subtle wit, 5 = extreme ghamand)
+  arroganceLevel?: number; // legacy option preserved
   languageStyle: 'auto' | 'hinglish' | 'english';
-  callHumanTitle: string; // e.g. "insaan", "mortal", "human", "subject"
+  callHumanTitle?: string;
   customPromptAddon?: string;
 }
 
@@ -69,7 +73,7 @@ export interface TypewriterSettings {
   speed: 'fast' | 'normal' | 'cinematic';
   soundEnabled: boolean; // Web Audio API synthetic typing clicks
   soundVolume: number;   // 0 to 1
-  hologramGlow: boolean; // Cyber glowing scanlines and pulsating caret
+  hologramGlow?: boolean;
 }
 
 export interface ChatPreferences {
@@ -85,11 +89,13 @@ export interface LanguageSettings {
   autoDetect: boolean;
 }
 
+export type AppTheme = 'monochrome_gold' | 'obsidian_slate' | 'cyber_cyan' | 'matrix_emerald' | 'neon_violet' | 'crimson_glitch';
+
 export interface AppSettings {
   language: LanguageSettings;
   persona: PersonaSettings;
   voice: VoiceSettings;
   typewriter: TypewriterSettings;
   chat: ChatPreferences;
-  theme: 'cyber_cyan' | 'neon_violet' | 'matrix_emerald' | 'crimson_glitch';
+  theme: AppTheme;
 }

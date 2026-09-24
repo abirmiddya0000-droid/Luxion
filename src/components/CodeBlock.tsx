@@ -51,7 +51,7 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ language, code, onPreview 
             <button
               type="button"
               onClick={() => onPreview && onPreview(code)}
-              className="flex items-center gap-1 rounded-md bg-neutral-800 px-2 py-1 text-[11px] font-medium text-emerald-300 hover:bg-neutral-700 hover:text-emerald-200 transition-colors"
+              className="flex items-center gap-1 rounded-md bg-neutral-800 px-2 py-1 text-[11px] font-medium text-white hover:bg-neutral-700 transition-colors"
               title="Preview and interact with this app or game"
             >
               <Play className="h-3 w-3 fill-current" />

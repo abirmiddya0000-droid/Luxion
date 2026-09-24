@@ -2,45 +2,41 @@ import React, { useEffect, useRef } from 'react';
 import {
   X,
   Plus,
+  Layers,
+  Sliders,
+  HelpCircle,
+  Info,
   History,
   Volume2,
-  VolumeX,
-  Sliders,
-  Palette,
   Trash2,
-  Info,
-  Check,
-  Headphones,
 } from 'lucide-react';
 
 interface OptionsMenuProps {
   isOpen: boolean;
   onClose: () => void;
   onNewChat: () => void;
+  onOpenProjects: () => void;
+  onOpenSettings: () => void;
+  onOpenHelp: () => void;
+  onOpenAbout: () => void;
   onOpenHistory: () => void;
   onToggleReadAloud: () => void;
   isSpeaking: boolean;
-  autoSpeak: boolean;
-  onToggleAutoSpeak: () => void;
-  onOpenVoiceSettings: () => void;
-  onOpenAppearance: () => void;
   onClearCurrentChat: () => void;
-  onOpenAbout: () => void;
 }
 
 export const OptionsMenu: React.FC<OptionsMenuProps> = ({
   isOpen,
   onClose,
   onNewChat,
+  onOpenProjects,
+  onOpenSettings,
+  onOpenHelp,
+  onOpenAbout,
   onOpenHistory,
   onToggleReadAloud,
   isSpeaking,
-  autoSpeak,
-  onToggleAutoSpeak,
-  onOpenVoiceSettings,
-  onOpenAppearance,
   onClearCurrentChat,
-  onOpenAbout,
 }) => {
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -60,7 +56,6 @@ export const OptionsMenu: React.FC<OptionsMenuProps> = ({
     };
 
     document.addEventListener('keydown', handleKeyDown);
-    // Use mousedown with timeout to avoid catching the opening click
     const timer = setTimeout(() => {
       document.addEventListener('mousedown', handleClickOutside);
     }, 10);
@@ -77,223 +72,159 @@ export const OptionsMenu: React.FC<OptionsMenuProps> = ({
   return (
     <div
       id="options-menu-overlay"
-      className="fixed inset-0 z-50 flex flex-col justify-end sm:justify-start sm:items-start p-0 sm:p-4 bg-black/60 backdrop-blur-sm animate-fade-in sm:pt-16 sm:pl-12"
+      className="fixed inset-0 z-50 flex items-start justify-end p-3 sm:p-4 bg-black/60 backdrop-blur-sm font-mono animate-fade-in"
       aria-modal="true"
       role="dialog"
-      aria-label="LUXION Options Menu"
+      aria-label="LUXION menu"
     >
       <div
         ref={panelRef}
         id="options-menu-sheet"
-        className="w-full sm:w-80 rounded-t-2xl sm:rounded-2xl border border-neutral-800 bg-neutral-950 p-3 sm:p-4 shadow-2xl text-left overflow-hidden max-h-[85vh] sm:max-h-[90vh] flex flex-col animate-slide-up sm:animate-fade-in"
+        className="w-full max-w-xs sm:w-72 rounded-xl border border-neutral-800 bg-black p-3 text-white shadow-2xl overflow-hidden select-none animate-fade-in mt-12 sm:mt-14 mr-1 sm:mr-3"
       >
-        {/* Mobile Drag Indicator & Header */}
-        <div className="flex sm:hidden items-center justify-center pt-1 pb-2">
-          <div className="h-1 w-10 rounded-full bg-neutral-700" />
-        </div>
-
-        <div className="flex items-center justify-between px-2 pb-2.5 border-b border-neutral-800/80 mb-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wider text-neutral-400 font-mono">
-              LUXION Options
-            </span>
-          </div>
+        {/* Header */}
+        <div className="flex items-center justify-between pb-2.5 mb-2 border-b border-neutral-800 px-1">
+          <span className="text-[10px] uppercase tracking-widest text-neutral-400">
+            LUXION MENU
+          </span>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-lg p-1.5 text-neutral-400 hover:bg-neutral-800 hover:text-white transition-colors"
+            className="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-900 transition-colors"
             title="Close menu"
-            aria-label="Close menu"
           >
-            <X className="h-4 w-4" />
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        {/* Options List */}
-        <div className="flex-1 overflow-y-auto space-y-1 py-1 text-xs">
+        {/* Menu Items */}
+        <div className="space-y-1 text-xs">
           {/* 1. New Chat */}
           <button
             type="button"
-            id="opt-new-chat"
             onClick={() => {
               onNewChat();
               onClose();
             }}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-neutral-200 hover:bg-neutral-900 hover:text-white transition-all text-left group"
+            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-neutral-300 hover:text-white hover:bg-neutral-900 transition-colors text-left"
           >
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-neutral-900 border border-neutral-800 text-cyan-400 group-hover:border-cyan-500/50">
-              <Plus className="h-4 w-4" />
-            </div>
+            <Plus className="w-3.5 h-3.5 text-neutral-400" />
             <div className="flex flex-col">
-              <span className="font-medium text-neutral-100">New Chat</span>
-              <span className="text-[10px] text-neutral-500">Start a fresh conversation</span>
+              <span className="font-semibold text-white">New Chat</span>
+              <span className="text-[10px] text-neutral-500">Reset to clean terminal</span>
             </div>
           </button>
 
-          {/* 2. Chat History */}
+          {/* 2. Projects (Build Workspaces) */}
           <button
             type="button"
-            id="opt-chat-history"
             onClick={() => {
-              onOpenHistory();
+              onOpenProjects();
               onClose();
             }}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-neutral-200 hover:bg-neutral-900 hover:text-white transition-all text-left group"
+            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-neutral-300 hover:text-white hover:bg-neutral-900 transition-colors text-left"
           >
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-300 group-hover:border-neutral-700">
-              <History className="h-4 w-4" />
-            </div>
+            <Layers className="w-3.5 h-3.5 text-neutral-400" />
             <div className="flex flex-col">
-              <span className="font-medium text-neutral-100">Chat History</span>
-              <span className="text-[10px] text-neutral-500">Browse saved sessions</span>
+              <span className="font-semibold text-white">Projects</span>
+              <span className="text-[10px] text-neutral-500">Web, game &amp; app workspaces</span>
             </div>
           </button>
 
-          <div className="my-1.5 border-t border-neutral-800/60" />
-
-          {/* 3. Read Aloud */}
+          {/* 3. Settings */}
           <button
             type="button"
-            id="opt-read-aloud"
             onClick={() => {
-              onToggleReadAloud();
+              onOpenSettings();
               onClose();
             }}
-            className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-neutral-200 hover:bg-neutral-900 hover:text-white transition-all text-left group"
+            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-neutral-300 hover:text-white hover:bg-neutral-900 transition-colors text-left"
           >
-            <div className="flex items-center gap-3">
-              <div className={`flex h-7 w-7 items-center justify-center rounded-lg border text-neutral-300 ${
-                isSpeaking
-                  ? 'bg-cyan-950/80 border-cyan-500 text-cyan-300 animate-pulse'
-                  : 'bg-neutral-900 border-neutral-800'
-              }`}>
-                <Headphones className="h-4 w-4" />
-              </div>
-              <div className="flex flex-col">
-                <span className="font-medium text-neutral-100">
-                  {isSpeaking ? 'Stop Reading' : 'Read Aloud'}
-                </span>
-                <span className="text-[10px] text-neutral-500">
-                  {isSpeaking ? 'Currently speaking...' : 'Speak last response'}
-                </span>
-              </div>
-            </div>
-            {isSpeaking && (
-              <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800">
-                Playing
-              </span>
-            )}
-          </button>
-
-          {/* 4. Auto Speak */}
-          <button
-            type="button"
-            id="opt-auto-speak"
-            onClick={onToggleAutoSpeak}
-            className="flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-neutral-200 hover:bg-neutral-900 hover:text-white transition-all text-left group"
-          >
-            <div className="flex items-center gap-3">
-              <div className={`flex h-7 w-7 items-center justify-center rounded-lg border text-neutral-300 ${
-                autoSpeak
-                  ? 'bg-indigo-950/80 border-indigo-500 text-indigo-300'
-                  : 'bg-neutral-900 border-neutral-800'
-              }`}>
-                {autoSpeak ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-              </div>
-              <div className="flex flex-col">
-                <span className="font-medium text-neutral-100">Auto Speak</span>
-                <span className="text-[10px] text-neutral-500">Read responses automatically</span>
-              </div>
-            </div>
-            <div
-              className={`w-9 h-5 rounded-full transition-colors relative p-0.5 ${
-                autoSpeak ? 'bg-cyan-500' : 'bg-neutral-800'
-              }`}
-            >
-              <div
-                className={`w-4 h-4 rounded-full bg-white transition-transform ${
-                  autoSpeak ? 'translate-x-4' : 'translate-x-0'
-                }`}
-              />
+            <Sliders className="w-3.5 h-3.5 text-neutral-400" />
+            <div className="flex flex-col">
+              <span className="font-semibold text-white">Settings</span>
+              <span className="text-[10px] text-neutral-500">Voice, typing &amp; preferences</span>
             </div>
           </button>
 
-          {/* 5. Voice Settings */}
+          {/* 4. Help */}
           <button
             type="button"
-            id="opt-voice-settings"
             onClick={() => {
-              onOpenVoiceSettings();
+              onOpenHelp();
               onClose();
             }}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-neutral-200 hover:bg-neutral-900 hover:text-white transition-all text-left group"
+            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-neutral-300 hover:text-white hover:bg-neutral-900 transition-colors text-left"
           >
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-300 group-hover:border-neutral-700">
-              <Sliders className="h-4 w-4" />
-            </div>
+            <HelpCircle className="w-3.5 h-3.5 text-neutral-400" />
             <div className="flex flex-col">
-              <span className="font-medium text-neutral-100">Voice Settings</span>
-              <span className="text-[10px] text-neutral-500">Pitch, rate &amp; voice model</span>
+              <span className="font-semibold text-white">Help</span>
+              <span className="text-[10px] text-neutral-500">Slash commands &amp; shortcuts</span>
             </div>
           </button>
 
-          {/* 6. Appearance */}
+          {/* 5. About LUXION */}
           <button
             type="button"
-            id="opt-appearance"
-            onClick={() => {
-              onOpenAppearance();
-              onClose();
-            }}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-neutral-200 hover:bg-neutral-900 hover:text-white transition-all text-left group"
-          >
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-300 group-hover:border-neutral-700">
-              <Palette className="h-4 w-4" />
-            </div>
-            <div className="flex flex-col">
-              <span className="font-medium text-neutral-100">Appearance</span>
-              <span className="text-[10px] text-neutral-500">Dark themes &amp; visual accents</span>
-            </div>
-          </button>
-
-          <div className="my-1.5 border-t border-neutral-800/60" />
-
-          {/* 7. Clear Current Chat */}
-          <button
-            type="button"
-            id="opt-clear-current-chat"
-            onClick={() => {
-              onClearCurrentChat();
-              onClose();
-            }}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-rose-300 hover:bg-rose-950/30 hover:text-rose-200 transition-all text-left group"
-          >
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-950/50 border border-rose-900/60 text-rose-400 group-hover:border-rose-700">
-              <Trash2 className="h-4 w-4" />
-            </div>
-            <div className="flex flex-col">
-              <span className="font-medium text-rose-300">Clear Current Chat</span>
-              <span className="text-[10px] text-rose-400/70">Wipe messages on screen</span>
-            </div>
-          </button>
-
-          {/* 8. About LUXION */}
-          <button
-            type="button"
-            id="opt-about-luxion"
             onClick={() => {
               onOpenAbout();
               onClose();
             }}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-neutral-300 hover:bg-neutral-900 hover:text-white transition-all text-left group"
+            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-neutral-300 hover:text-white hover:bg-neutral-900 transition-colors text-left"
           >
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-neutral-900 border border-neutral-800 text-neutral-400 group-hover:border-neutral-700">
-              <Info className="h-4 w-4" />
-            </div>
+            <Info className="w-3.5 h-3.5 text-neutral-400" />
             <div className="flex flex-col">
-              <span className="font-medium text-neutral-200">About LUXION</span>
-              <span className="text-[10px] text-neutral-500">Version, provider &amp; creator</span>
+              <span className="font-semibold text-white">About LUXION</span>
+              <span className="text-[10px] text-neutral-500">Architecture &amp; origin</span>
             </div>
+          </button>
+
+          <div className="my-1.5 border-t border-neutral-800" />
+
+          {/* Chat History */}
+          <button
+            type="button"
+            onClick={() => {
+              onOpenHistory();
+              onClose();
+            }}
+            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-neutral-300 hover:text-white hover:bg-neutral-900 transition-colors text-left"
+          >
+            <History className="w-3.5 h-3.5 text-neutral-400" />
+            <span className="text-neutral-300">Saved History</span>
+          </button>
+
+          {/* Read Aloud / Voice */}
+          <button
+            type="button"
+            onClick={() => {
+              onToggleReadAloud();
+              onClose();
+            }}
+            className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg text-neutral-300 hover:text-white hover:bg-neutral-900 transition-colors text-left"
+          >
+            <div className="flex items-center gap-2.5">
+              <Volume2 className={`w-3.5 h-3.5 ${isSpeaking ? 'text-white animate-pulse' : 'text-neutral-400'}`} />
+              <span>{isSpeaking ? 'Stop Audio' : 'Read Aloud'}</span>
+            </div>
+            {isSpeaking && (
+              <span className="text-[9px] px-1.5 py-0.5 rounded bg-neutral-800 text-white font-mono">
+                Active
+              </span>
+            )}
+          </button>
+
+          {/* Clear Current Chat */}
+          <button
+            type="button"
+            onClick={() => {
+              onClearCurrentChat();
+              onClose();
+            }}
+            className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-900 transition-colors text-left"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Clear Screen</span>
           </button>
         </div>
       </div>

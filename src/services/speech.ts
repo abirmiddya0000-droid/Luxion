@@ -6,14 +6,11 @@ declare global {
 }
 
 export type AuditoryTone =
-  | 'robotic-girl-deep'
-  | 'cyber-female'
-  | 'futuristic-cyber'
   | 'deep-baritone'
   | 'calm-articulate'
+  | 'mature-command'
   | 'standard-masculine'
   | 'unclassified-male'
-  | 'feminine'
   | 'neutral';
 
 export interface VoiceMetadataAnalysis {
@@ -21,7 +18,6 @@ export interface VoiceMetadataAnalysis {
   score: number;
   tone: AuditoryTone;
   isMasculine: boolean;
-  isFuturistic: boolean;
   isDeepTone: boolean;
   isCalm: boolean;
   isNeuralOrNatural: boolean;
@@ -38,6 +34,10 @@ export class TTSEngine {
     typeof window !== 'undefined' && 'speechSynthesis' in window ? window.speechSynthesis : null;
 
   private static cachedAnalyses = new WeakMap<SpeechSynthesisVoice, VoiceMetadataAnalysis>();
+  private static currentUtterance: SpeechSynthesisUtterance | null = null;
+  private static activeMessageId: string | null = null;
+  private static isPausedState: boolean = false;
+  private static statusListeners: Set<(id: string | null, status: 'idle' | 'playing' | 'paused') => void> = new Set();
 
   public static isSupported(): boolean {
     return !!this.synth;
@@ -48,10 +48,20 @@ export class TTSEngine {
     return this.synth.getVoices();
   }
 
+  public static addStatusListener(cb: (id: string | null, status: 'idle' | 'playing' | 'paused') => void): () => void {
+    this.statusListeners.add(cb);
+    return () => this.statusListeners.delete(cb);
+  }
+
+  private static notifyStatus(status: 'idle' | 'playing' | 'paused'): void {
+    const currentId = status === 'idle' ? null : this.activeMessageId;
+    this.statusListeners.forEach((cb) => cb(currentId, status));
+  }
+
   /**
-   * Inspects synthesis metadata (name, voiceURI, lang, localService)
-   * to detect deeper tonal characteristics, masculine resonance,
-   * and futuristic/calm auditory presence.
+   * Analyzes synthesis voices to identify clearly MALE voices that sound
+   * deep, confident, calm, mature, and controlled.
+   * Feminine, high-pitched, childish, or cartoonish voices are disqualified.
    */
   public static analyzeVoice(v: SpeechSynthesisVoice): VoiceMetadataAnalysis {
     if (this.cachedAnalyses.has(v)) {
@@ -67,12 +77,11 @@ export class TTSEngine {
     const matchReasons: string[] = [];
 
     let isMasculine = false;
-    let isFuturistic = false;
     let isDeepTone = false;
     let isCalm = false;
     let isNeuralOrNatural = false;
 
-    // Known feminine identifiers for strict exclusion / deprioritization
+    // Strict feminine indicators to disqualify non-male voices
     const FEMALE_INDICATORS = [
       'female', 'woman', 'girl', 'zira', 'samantha', 'victoria', 'karen', 'susan',
       'hazel', 'fiona', 'jenny', 'aria', 'ava', 'emma', 'cynthia', 'stephanie',
@@ -100,24 +109,21 @@ export class TTSEngine {
       !uri.includes('male');
 
     if (hasFemaleIndicator || isDefaultGoogleUSFemale) {
-      const isNeural = uri.includes('neural') || name.includes('natural') || name.includes('google');
-      const isCyberOrSynth = uri.includes('synthetic') || uri.includes('cyber') || name.includes('samantha') || name.includes('zira') || name.includes('jenny');
-      
+      // Disqualify from male voice selection
       const analysis: VoiceMetadataAnalysis = {
         voice: v,
-        score: isNeural ? 250 : 180,
-        tone: 'robotic-girl-deep',
+        score: -1000,
+        tone: 'neutral',
         isMasculine: false,
-        isFuturistic: true,
-        isDeepTone: true,
-        isCalm: true,
-        isNeuralOrNatural: isNeural,
+        isDeepTone: false,
+        isCalm: false,
+        isNeuralOrNatural: false,
         isLocal,
         dialect: this.getDialectName(lang),
-        badge: isNeural ? 'Cyber Android Girl • Deep' : 'Robotic Maiden • Deep',
-        calibratedPitch: 0.85, // Lowered pitch gives deep robotic girl tone
-        calibratedRate: 0.96,  // Controlled cadence
-        matchReasons: ['Robotic Cyber Girl profile matched', isNeural ? 'Neural clarity (+40)' : 'Synth tone'],
+        badge: 'Feminine (Excluded)',
+        calibratedPitch: 1.0,
+        calibratedRate: 1.0,
+        matchReasons: ['Feminine voice disqualified'],
       };
       this.cachedAnalyses.set(v, analysis);
       return analysis;
@@ -125,18 +131,18 @@ export class TTSEngine {
 
     // 1. Language Dialect Weighting
     if (lang.startsWith('en-gb') || lang === 'en_gb') {
-      score += 35; // British accents carry iconic, calm, J.A.R.V.I.S.-like futuristic AI clarity
+      score += 45; // British male voices carry calm, authoritative, deep AI clarity
       isCalm = true;
-      matchReasons.push('British English cadence (+35)');
+      matchReasons.push('British English cadence (+45)');
     } else if (lang.startsWith('en-us') || lang === 'en_us') {
-      score += 30; // Clear American baritone presence
-      matchReasons.push('American English presence (+30)');
+      score += 40;
+      matchReasons.push('American English presence (+40)');
     } else if (lang.startsWith('en')) {
-      score += 25;
-      matchReasons.push('English dialect (+25)');
+      score += 30;
+      matchReasons.push('English dialect (+30)');
     }
 
-    // 2. Neural / Wavenet / Studio Quality Metadata
+    // 2. High-Fidelity Neural / Natural Engines
     if (
       uri.includes('neural') ||
       name.includes('natural') ||
@@ -146,11 +152,11 @@ export class TTSEngine {
       uri.includes('journey')
     ) {
       isNeuralOrNatural = true;
-      score += 40;
-      matchReasons.push('Neural / Natural synthesis engine (+40)');
+      score += 60;
+      matchReasons.push('Neural / Natural engine (+60)');
     }
 
-    // 3. Explicit Masculine Tags in Name or URI
+    // 3. Explicit Male Metadata Tags
     if (
       /\b(male|man|guy|boy)\b/i.test(name) ||
       /\b(male|man|guy|boy)\b/i.test(uri) ||
@@ -160,8 +166,8 @@ export class TTSEngine {
       uri.includes('_male')
     ) {
       isMasculine = true;
-      score += 75;
-      matchReasons.push('Explicit masculine metadata tag (+75)');
+      score += 100;
+      matchReasons.push('Explicit masculine tag (+100)');
     }
 
     // 4. Acoustic Sub-Model Letter Inspection (Google TTS conventions: D and J are deep male baritones; B is male)
@@ -171,47 +177,32 @@ export class TTSEngine {
     ) {
       isMasculine = true;
       isDeepTone = true;
-      isFuturistic = true;
-      score += 90;
-      matchReasons.push('Deep-baritone acoustic model [D/J] (+90)');
+      isCalm = true;
+      score += 120;
+      matchReasons.push('Deep baritone sub-model [D/J] (+120)');
     } else if (
       /(?:neural2|wavenet|standard)-[bi]\b/i.test(uri) ||
       /(?:neural2|wavenet|standard)-[bi]\b/i.test(name)
     ) {
       isMasculine = true;
-      isFuturistic = true;
-      score += 70;
-      matchReasons.push('Masculine acoustic model [B/I] (+70)');
+      score += 90;
+      matchReasons.push('Masculine sub-model [B/I] (+90)');
     }
 
-    // 5. Specific Renowned Engines & Signatures
-    // Apple "Alex" - legendary calm, mathematical formant synthesizer with futuristic AI cadence
-    if (
-      name === 'alex' ||
-      uri.includes('com.apple.speech.synthesis.voice.alex') ||
-      name.includes('alex (en-us)')
-    ) {
-      isMasculine = true;
-      isFuturistic = true;
-      isCalm = true;
-      isDeepTone = true;
-      score += 105;
-      matchReasons.push('Apple Alex iconic calm futuristic voice (+105)');
-    }
-
-    // Google UK English Male - distinguished, calm, futuristic AI sound
+    // 5. Renowned High-Quality Male Voices
+    // Google UK English Male - calm, deep, authoritative AI
     if (
       name.includes('google uk english male') ||
       uri.includes('en-gb-x-rjs#male')
     ) {
       isMasculine = true;
-      isFuturistic = true;
       isCalm = true;
-      score += 100;
-      matchReasons.push('Google UK English Male AI voice (+100)');
+      isDeepTone = true;
+      score += 150;
+      matchReasons.push('Google UK English Male AI (+150)');
     }
 
-    // Microsoft Guy Neural - rich, calm, masculine presence
+    // Microsoft Guy Neural - rich, mature, deep, calm male voice
     if (
       name.includes('guy online (natural)') ||
       uri.includes('guyneural') ||
@@ -220,8 +211,21 @@ export class TTSEngine {
       isMasculine = true;
       isDeepTone = true;
       isCalm = true;
-      score += 95;
-      matchReasons.push('Microsoft Guy Neural deep baritone (+95)');
+      score += 160;
+      matchReasons.push('Microsoft Guy Neural mature baritone (+160)');
+    }
+
+    // Apple Alex - legendary calm, mature, deep AI voice
+    if (
+      name === 'alex' ||
+      uri.includes('com.apple.speech.synthesis.voice.alex') ||
+      name.includes('alex (en-us)')
+    ) {
+      isMasculine = true;
+      isCalm = true;
+      isDeepTone = true;
+      score += 140;
+      matchReasons.push('Apple Alex iconic calm voice (+140)');
     }
 
     // Apple Bruce - explicitly built for deep-tone baritone
@@ -231,8 +235,8 @@ export class TTSEngine {
     ) {
       isMasculine = true;
       isDeepTone = true;
-      score += 90;
-      matchReasons.push('Apple Bruce deep-tone baritone (+90)');
+      score += 135;
+      matchReasons.push('Apple Bruce deep baritone (+135)');
     }
 
     // Apple Daniel - British English calm, dignified baritone
@@ -243,39 +247,39 @@ export class TTSEngine {
     ) {
       isMasculine = true;
       isCalm = true;
-      score += 85;
-      matchReasons.push('Daniel British calm baritone (+85)');
+      score += 130;
+      matchReasons.push('Daniel British calm baritone (+130)');
     }
 
-    // Microsoft David & Mark - classic Windows desktop baritones
+    // Microsoft David, George, Mark - classic Windows male baritones
     if (name.includes('microsoft david')) {
       isMasculine = true;
       isDeepTone = true;
-      score += 80;
-      matchReasons.push('Microsoft David baritone (+80)');
-    } else if (name.includes('microsoft mark')) {
-      isMasculine = true;
-      score += 75;
-      matchReasons.push('Microsoft Mark male voice (+75)');
+      isCalm = true;
+      score += 120;
+      matchReasons.push('Microsoft David mature baritone (+120)');
     } else if (name.includes('microsoft george')) {
       isMasculine = true;
       isCalm = true;
-      score += 80;
-      matchReasons.push('Microsoft George UK male (+80)');
+      score += 115;
+      matchReasons.push('Microsoft George UK male (+115)');
+    } else if (name.includes('microsoft mark')) {
+      isMasculine = true;
+      score += 105;
+      matchReasons.push('Microsoft Mark male (+105)');
     }
 
     // Linux Festival / eSpeak deep tones
     if (uri.includes('kal_diphone') || name.includes('kal_diphone')) {
       isMasculine = true;
       isDeepTone = true;
-      isFuturistic = true;
-      score += 75;
-      matchReasons.push('Festival kal_diphone deep masculine (+75)');
-    } else if (name.includes('espeak-en-m3') || uri.includes('espeak-en-m3')) {
+      score += 85;
+      matchReasons.push('kal_diphone masculine (+85)');
+    } else if (name.includes('espeak-en-m3') || uri.includes('espeak-en-m3') || name.includes('+m3')) {
       isMasculine = true;
       isDeepTone = true;
-      score += 65;
-      matchReasons.push('eSpeak m3 deep male tone (+65)');
+      score += 80;
+      matchReasons.push('eSpeak m3 deep male (+80)');
     }
 
     // 6. Masculine Name Dictionary Scan
@@ -299,73 +303,54 @@ export class TTSEngine {
 
     if (hasMaleName) {
       isMasculine = true;
-      score += 45;
-      matchReasons.push('Recognized masculine persona (+45)');
+      score += 70;
+      matchReasons.push('Recognized masculine persona (+70)');
     }
 
     // 7. Deeper Tone Keywords
-    const DEEP_KEYWORDS = ['deep', 'baritone', 'bass', 'low', 'solemn', 'command', 'rich'];
+    const DEEP_KEYWORDS = ['deep', 'baritone', 'bass', 'low', 'command', 'rich', 'mature'];
     if (DEEP_KEYWORDS.some((k) => name.includes(k) || uri.includes(k))) {
       isDeepTone = true;
-      score += 30;
-      matchReasons.push('Deep acoustic characteristic keywords (+30)');
+      score += 50;
+      matchReasons.push('Deep tone descriptor (+50)');
     }
 
-    // 8. Futuristic / Cyber / AI Keywords
-    const FUTURISTIC_KEYWORDS = ['cyber', 'matrix', 'synthetic', 'quantum', 'ai', 'robot', 'futuristic', 'formant'];
-    if (FUTURISTIC_KEYWORDS.some((k) => name.includes(k) || uri.includes(k))) {
-      isFuturistic = true;
-      score += 25;
-      matchReasons.push('Futuristic / AI descriptor (+25)');
-    }
-
-    // Determine Auditory Tone Profile
+    // Categorize auditory tone
     let tone: AuditoryTone = 'neutral';
-    let badge = 'Neutral';
+    let badge = 'Male Voice';
 
-    if (isFuturistic && isDeepTone) {
-      tone = 'futuristic-cyber';
-      badge = 'Futuristic AI • Deep';
-    } else if (isFuturistic) {
-      tone = 'futuristic-cyber';
-      badge = 'Futuristic AI';
+    if (isDeepTone && isCalm) {
+      tone = 'deep-baritone';
+      badge = 'Deep Baritone • Mature';
     } else if (isDeepTone) {
       tone = 'deep-baritone';
       badge = 'Deep Baritone';
     } else if (isCalm && isMasculine) {
       tone = 'calm-articulate';
-      badge = 'Calm Articulate';
+      badge = 'Calm Articulate Male';
     } else if (isMasculine) {
       tone = 'standard-masculine';
-      badge = isNeuralOrNatural ? 'Neural Male' : 'Masculine';
+      badge = isNeuralOrNatural ? 'Neural Male' : 'Confident Male';
     } else if (score > 10) {
       tone = 'unclassified-male';
       badge = 'Male Voice';
     }
 
-    // Calibrate Optimal Acoustic Parameters for LUXION Identity
-    // Target: Calm, confident, masculine, futuristic resonance
-    let calibratedPitch = 0.92;
-    let calibratedRate = 0.98;
+    // Optimal calibration for LUXION's powerful, deep, calm, confident male identity
+    // Pitch 0.90 gives a deep baritone resonance without distortion or slowness
+    // Rate 0.97 provides articulate, controlled pacing
+    let calibratedPitch = 0.90;
+    let calibratedRate = 0.97;
 
     if (tone === 'deep-baritone') {
-      // Deep voices already have lower fundamentals; 0.94 preserves clarity without sounding muddy
-      calibratedPitch = 0.94;
-      calibratedRate = 0.98;
-    } else if (tone === 'futuristic-cyber') {
-      // Alex & Google UK Male sound exceptionally sleek with a subtle drop to 0.90
-      calibratedPitch = 0.90;
-      calibratedRate = 0.98;
-    } else if (tone === 'calm-articulate') {
       calibratedPitch = 0.92;
       calibratedRate = 0.97;
+    } else if (tone === 'calm-articulate') {
+      calibratedPitch = 0.90;
+      calibratedRate = 0.96;
     } else if (isMasculine) {
-      // Standard male voices benefit from a modest drop to 0.89 to hit the baritone zone
-      calibratedPitch = 0.89;
-      calibratedRate = 0.98;
-    } else {
-      calibratedPitch = 0.92;
-      calibratedRate = 0.98;
+      calibratedPitch = 0.88;
+      calibratedRate = 0.97;
     }
 
     const analysis: VoiceMetadataAnalysis = {
@@ -373,7 +358,6 @@ export class TTSEngine {
       score,
       tone,
       isMasculine,
-      isFuturistic,
       isDeepTone,
       isCalm,
       isNeuralOrNatural,
@@ -390,8 +374,7 @@ export class TTSEngine {
   }
 
   /**
-   * Returns all available voices prioritized by their masculine, calm,
-   * and futuristic acoustic characteristics.
+   * Returns available voices sorted by deep, calm, masculine acoustic suitability.
    */
   public static getPrioritizedVoices(): Array<{ voice: SpeechSynthesisVoice; analysis: VoiceMetadataAnalysis }> {
     const voices = this.getVoices();
@@ -402,50 +385,39 @@ export class TTSEngine {
       analysis: this.analyzeVoice(v),
     }));
 
+    // Filter out disqualified feminine voices first, then sort by highest masculine score
+    const maleOnly = analyzed.filter((a) => a.analysis.score > 0);
+    if (maleOnly.length > 0) {
+      maleOnly.sort((a, b) => b.analysis.score - a.analysis.score);
+      return maleOnly;
+    }
+
+    // Fallback: sort all voices by score
     analyzed.sort((a, b) => b.analysis.score - a.analysis.score);
     return analyzed;
   }
 
   /**
-   * Selects the highest-ranking robotic girl voice (deep, crisp, futuristic female synth).
-   */
-  public static getBestRoboticGirlVoice(): SpeechSynthesisVoice | null {
-    const prioritized = this.getPrioritizedVoices();
-    if (prioritized.length === 0) return null;
-
-    // First look for calibrated robotic girl voices
-    const girlVoice = prioritized.find((p) => p.analysis.tone === 'robotic-girl-deep' || p.analysis.tone === 'cyber-female');
-    if (girlVoice) {
-      return girlVoice.voice;
-    }
-
-    // Fall back to any female voice or top voice
-    return prioritized[0]?.voice || null;
-  }
-
-  /**
-   * Selects the highest-ranking masculine, calm, and futuristic voice available.
+   * Selects the highest-ranking clearly MALE, deep, confident, calm voice.
    */
   public static getBestMaleVoice(): SpeechSynthesisVoice | null {
     const prioritized = this.getPrioritizedVoices();
     if (prioritized.length === 0) return null;
 
-    // Pick top-scoring voice if score is positive
     if (prioritized[0].analysis.score > 0) {
       return prioritized[0].voice;
     }
 
-    // Fall back to first English voice, or first available voice
+    // Fall back to first English voice
     return prioritized.map((p) => p.voice).find((v) => v.lang.startsWith('en')) || prioritized[0].voice || null;
   }
 
   /**
-   * Returns recommended pitch and rate for a given voice to match LUXION's
-   * calm, deep, and futuristic auditory identity.
+   * Returns recommended pitch and rate for LUXION's deep, confident male voice.
    */
   public static getCalibratedAcoustics(voice: SpeechSynthesisVoice | null): { pitch: number; rate: number } {
     if (!voice) {
-      return { pitch: 0.92, rate: 0.98 };
+      return { pitch: 0.90, rate: 0.97 };
     }
     const analysis = this.analyzeVoice(voice);
     return {
@@ -462,13 +434,8 @@ export class TTSEngine {
     if (code.startsWith('en-ca') || code === 'en_ca') return 'en-CA (Canadian)';
     if (code.startsWith('en-ie') || code === 'en_ie') return 'en-IE (Irish)';
     if (code.startsWith('en-in') || code === 'en_in') return 'en-IN (Indian)';
-    if (code.startsWith('en-nz') || code === 'en_nz') return 'en-NZ (New Zealand)';
     if (code.startsWith('en')) return `${code} (English)`;
     return code;
-  }
-
-  public static stop(): void {
-    if (this.synth) this.synth.cancel();
   }
 
   /**
@@ -477,7 +444,7 @@ export class TTSEngine {
    */
   public static prepareSpeechText(text: string): string {
     return text
-      // Replace code blocks with a natural spoken marker
+      // Replace code blocks with a brief natural marker
       .replace(/```[a-z]*\s*[\s\S]*?```/gi, 'Here is the code implementation.')
       // Replace inline code
       .replace(/`([^`]+)`/g, '$1')
@@ -496,9 +463,9 @@ export class TTSEngine {
       .replace(/^\s*>\s*(.*)$/gm, '$1.')
       // Replace pipes from tables with pauses
       .replace(/\|/g, ', ')
-      // Remove decorative emojis and symbols that speech synthesis stumbles on
-      .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}▼▲→←★•✓✕]/gu, '')
-      // Normalize multiple commas, periods, or whitespace
+      // Remove decorative emojis and symbols
+      .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}▼▲→←★•✓✕⋮]/gu, '')
+      // Normalize whitespace and punctuation
       .replace(/,\s*,+/g, ', ')
       .replace(/\.\s*\.+/g, '.')
       .replace(/\n\s*\n/g, '. ')
@@ -506,38 +473,91 @@ export class TTSEngine {
       .trim();
   }
 
-  public static getBestVoiceForLanguage(langCode?: 'en' | 'hi' | 'bn'): SpeechSynthesisVoice | null {
-    const voices = this.getVoices();
-    if (!voices || voices.length === 0) return null;
-
-    if (langCode === 'hi') {
-      const hindiVoice = voices.find(
-        (v) =>
-          v.lang.toLowerCase().startsWith('hi') ||
-          v.name.toLowerCase().includes('hindi')
-      );
-      if (hindiVoice) return hindiVoice;
-    }
-
-    if (langCode === 'bn') {
-      const bengaliVoice = voices.find(
-        (v) =>
-          v.lang.toLowerCase().startsWith('bn') ||
-          v.name.toLowerCase().includes('bengali') ||
-          v.name.toLowerCase().includes('bangla')
-      );
-      if (bengaliVoice) return bengaliVoice;
-    }
-
-    // Default English / fallback to best deeper masculine voice
-    return this.getBestMaleVoice();
+  public static getActiveMessageId(): string | null {
+    return this.activeMessageId;
   }
 
-  public static speak(
+  public static isSpeaking(): boolean {
+    return !!(this.synth && this.synth.speaking && !this.synth.paused);
+  }
+
+  public static isPaused(): boolean {
+    return !!(this.synth && this.synth.paused);
+  }
+
+  public static getPlaybackState(messageId?: string): 'idle' | 'playing' | 'paused' {
+    if (!this.synth) return 'idle';
+    if (messageId && this.activeMessageId !== messageId) return 'idle';
+    if (this.synth.paused || this.isPausedState) return 'paused';
+    if (this.synth.speaking) return 'playing';
+    return 'idle';
+  }
+
+  /**
+   * Pause current speech playback.
+   */
+  public static pause(): void {
+    if (this.synth && this.synth.speaking && !this.synth.paused) {
+      this.synth.pause();
+      this.isPausedState = true;
+      this.notifyStatus('paused');
+    }
+  }
+
+  /**
+   * Resume paused speech playback.
+   */
+  public static resume(): void {
+    if (this.synth && this.synth.paused) {
+      this.synth.resume();
+      this.isPausedState = false;
+      this.notifyStatus('playing');
+    }
+  }
+
+  /**
+   * Stop all speech playback immediately.
+   */
+  public static stop(): void {
+    if (this.synth) {
+      this.synth.cancel();
+      this.currentUtterance = null;
+      this.activeMessageId = null;
+      this.isPausedState = false;
+      this.notifyStatus('idle');
+    }
+  }
+
+  /**
+   * Replay the message from the beginning.
+   */
+  public static replay(
+    messageId: string,
     text: string,
     options?: {
       voice?: SpeechSynthesisVoice | null;
-      language?: 'en' | 'hi' | 'bn';
+      rate?: number;
+      pitch?: number;
+      onStart?: () => void;
+      onEnd?: () => void;
+      onError?: (err: any) => void;
+    }
+  ): void {
+    this.stop();
+    this.speak(text, {
+      ...options,
+      messageId,
+    });
+  }
+
+  /**
+   * Plays speech using a deep, calm, confident male voice.
+   */
+  public static speak(
+    text: string,
+    options?: {
+      messageId?: string;
+      voice?: SpeechSynthesisVoice | null;
       rate?: number;
       pitch?: number;
       onStart?: () => void;
@@ -549,17 +569,16 @@ export class TTSEngine {
       options?.onError?.(new Error('SpeechSynthesis not supported'));
       return;
     }
+
     this.stop();
 
     const cleanText = this.prepareSpeechText(text);
-
     if (!cleanText) {
       options?.onEnd?.();
       return;
     }
 
-    const targetVoice =
-      options?.voice || this.getBestVoiceForLanguage(options?.language) || this.getBestMaleVoice();
+    const targetVoice = options?.voice || this.getBestMaleVoice();
     const calibrated = this.getCalibratedAcoustics(targetVoice);
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
@@ -570,11 +589,32 @@ export class TTSEngine {
       utterance.voice = targetVoice;
     }
 
-    utterance.onstart = () => options?.onStart?.();
-    utterance.onend = () => options?.onEnd?.();
+    this.currentUtterance = utterance;
+    this.activeMessageId = options?.messageId || null;
+    this.isPausedState = false;
+
+    utterance.onstart = () => {
+      this.isPausedState = false;
+      options?.onStart?.();
+      this.notifyStatus('playing');
+    };
+
+    utterance.onend = () => {
+      this.currentUtterance = null;
+      this.activeMessageId = null;
+      this.isPausedState = false;
+      options?.onEnd?.();
+      this.notifyStatus('idle');
+    };
+
     utterance.onerror = (e) => {
-      if (e.error !== 'interrupted') options?.onError?.(e);
-      else options?.onEnd?.();
+      this.currentUtterance = null;
+      this.activeMessageId = null;
+      this.isPausedState = false;
+      if (e.error !== 'interrupted') {
+        options?.onError?.(e);
+      }
+      this.notifyStatus('idle');
     };
 
     this.synth.speak(utterance);

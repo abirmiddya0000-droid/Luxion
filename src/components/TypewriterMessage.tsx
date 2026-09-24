@@ -182,10 +182,10 @@ export const TypewriterMessage: React.FC<TypewriterMessageProps> = ({
         <div className="pt-2 flex items-center justify-between text-xs text-neutral-400 select-none animate-fade-in">
           <div className="flex items-center gap-2">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-500" />
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-amber-500" />
             </span>
-            <span className="text-[11px] font-mono text-cyan-300/80">
+            <span className="text-[11px] font-mono text-amber-200/80">
               Generating response...
             </span>
           </div>

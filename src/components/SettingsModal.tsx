@@ -118,17 +118,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
 
     setIsPlayingTestAudio(true);
-    // Short, witty/arrogant snippet as requested
+    // Deep, calm, confident male AI voice snippet
     const testSnippet =
-      "Hmph. You really think your intellect can keep up with LUXION? Ask your question, human—I am listening.";
+      "I am LUXION. Present your query.";
 
-    // Select the chosen voice or fallback
+    // Select the chosen voice or fallback to best male voice
     const selectedVoiceItem = availableVoices[settings.voice.voiceIndex];
-    const voiceObj = selectedVoiceItem?.voice || TTSEngine.getBestRoboticGirlVoice();
+    const voiceObj = selectedVoiceItem?.voice || TTSEngine.getBestMaleVoice();
 
-    await TTSEngine.speak(testSnippet, {
-      pitch: settings.voice.calibratedPitch || settings.voice.pitch || 0.85,
-      rate: settings.voice.rate || 0.96,
+    TTSEngine.speak(testSnippet, {
+      pitch: settings.voice.calibratedPitch || settings.voice.pitch || 0.90,
+      rate: settings.voice.rate || 0.97,
       voice: voiceObj,
       onEnd: () => setIsPlayingTestAudio(false),
       onError: () => setIsPlayingTestAudio(false),
@@ -174,18 +174,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-neutral-800 bg-neutral-900/60 shrink-0">
           <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-tr from-cyan-600 to-indigo-600 text-white shadow-md shadow-cyan-500/15">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-b from-neutral-800 to-neutral-950 border border-amber-500/30 text-amber-200 shadow-sm">
               <Sliders className="w-4 h-4" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-white tracking-wide flex items-center gap-2">
+              <h2 className="text-base font-semibold text-white tracking-wide flex items-center gap-2">
                 LUXION Settings
-                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-400 border border-cyan-800/80">
-                  v3.5 Core
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-neutral-900 text-amber-200/90 border border-amber-500/30">
+                  Engine Core
                 </span>
               </h2>
               <p className="text-xs text-neutral-400">
-                Personalize voice, conversational behavior, themes, and memory.
+                Configure voice synthesis, AI persona, themes, and browser memory.
               </p>
             </div>
           </div>
@@ -206,7 +206,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             onClick={() => setActiveTab('appearance')}
             className={`flex items-center gap-2 px-3 py-3 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
               activeTab === 'appearance'
-                ? 'border-cyan-400 text-cyan-300 font-semibold'
+                ? 'border-amber-400 text-amber-300 font-semibold'
                 : 'border-transparent text-neutral-400 hover:text-neutral-200'
             }`}
           >
@@ -220,7 +220,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             onClick={() => setActiveTab('voice')}
             className={`flex items-center gap-2 px-3 py-3 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
               activeTab === 'voice'
-                ? 'border-cyan-400 text-cyan-300 font-semibold'
+                ? 'border-amber-400 text-amber-300 font-semibold'
                 : 'border-transparent text-neutral-400 hover:text-neutral-200'
             }`}
           >
@@ -233,12 +233,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             onClick={() => setActiveTab('chat')}
             className={`flex items-center gap-2 px-3 py-3 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
               activeTab === 'chat'
-                ? 'border-cyan-400 text-cyan-300 font-semibold'
+                ? 'border-amber-400 text-amber-300 font-semibold'
                 : 'border-transparent text-neutral-400 hover:text-neutral-200'
             }`}
           >
             <MessageSquare className="w-3.5 h-3.5" />
-            <span>Chat Experience</span>
+            <span>Persona &amp; Chat</span>
           </button>
 
           <button
@@ -246,7 +246,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             onClick={() => setActiveTab('memory')}
             className={`flex items-center gap-2 px-3 py-3 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
               activeTab === 'memory'
-                ? 'border-cyan-400 text-cyan-300 font-semibold'
+                ? 'border-amber-400 text-amber-300 font-semibold'
                 : 'border-transparent text-neutral-400 hover:text-neutral-200'
             }`}
           >
@@ -259,7 +259,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             onClick={() => setActiveTab('about')}
             className={`flex items-center gap-2 px-3 py-3 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
               activeTab === 'about'
-                ? 'border-cyan-400 text-cyan-300 font-semibold'
+                ? 'border-amber-400 text-amber-300 font-semibold'
                 : 'border-transparent text-neutral-400 hover:text-neutral-200'
             }`}
           >
@@ -274,39 +274,35 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {activeTab === 'appearance' && (
             <div className="space-y-6 animate-fade-in max-w-2xl">
               <div>
-                <h3 className="text-sm font-semibold text-white mb-1">Color Palette &amp; Accent</h3>
+                <h3 className="text-sm font-semibold text-white mb-1">Color Palette &amp; Accents</h3>
                 <p className="text-xs text-neutral-400 mb-4">
-                  Select your preferred cybernetic dark tone theme for borders, highlights, and icons.
+                  Select your preferred dark foundation with subtle accents.
                 </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {[
                     {
-                      id: 'cyber_cyan',
-                      label: 'Obsidian Cyan (Default)',
-                      desc: 'Deep blacks with cyan-teal matrix accents',
-                      badge: 'border-cyan-500 bg-cyan-950/20 text-cyan-300',
+                      id: 'monochrome_gold',
+                      label: 'Obsidian & Gold (Default)',
+                      desc: 'Deep near-black foundation with subtle champagne gold accents',
                     },
                     {
-                      id: 'neon_violet',
-                      label: 'Neon Violet',
-                      desc: 'Cyberpunk aesthetic with electric indigo-violet',
-                      badge: 'border-indigo-500 bg-indigo-950/20 text-indigo-300',
+                      id: 'obsidian_slate',
+                      label: 'Obsidian Slate',
+                      desc: 'Deep charcoal-black with platinum silver borders',
+                    },
+                    {
+                      id: 'cyber_cyan',
+                      label: 'Deep Cyan',
+                      desc: 'Graphite black with restrained cyan-teal highlights',
                     },
                     {
                       id: 'matrix_emerald',
                       label: 'Matrix Emerald',
-                      desc: 'Terminal phosphor green accents on black',
-                      badge: 'border-emerald-500 bg-emerald-950/20 text-emerald-300',
-                    },
-                    {
-                      id: 'crimson_glitch',
-                      label: 'Crimson Glitch',
-                      desc: 'High contrast ruby-red cyber alert highlights',
-                      badge: 'border-rose-500 bg-rose-950/20 text-rose-300',
+                      desc: 'Deep terminal black with subtle phosphor green accents',
                     },
                   ].map((theme) => {
-                    const isSelected = settings.theme === theme.id;
+                    const isSelected = (settings.theme || 'monochrome_gold') === theme.id;
                     return (
                       <button
                         key={theme.id}
@@ -314,13 +310,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         onClick={() => updateTheme(theme.id as any)}
                         className={`p-3.5 rounded-xl border text-left transition-all ${
                           isSelected
-                            ? 'border-cyan-500 bg-neutral-900 shadow-md ring-1 ring-cyan-500/30'
+                            ? 'border-amber-500/70 bg-neutral-900 shadow-md ring-1 ring-amber-500/30'
                             : 'border-neutral-800 bg-neutral-900/40 hover:border-neutral-700'
                         }`}
                       >
                         <div className="flex items-center justify-between mb-1">
                           <span className="text-xs font-semibold text-neutral-100">{theme.label}</span>
-                          {isSelected && <Check className="w-4 h-4 text-cyan-400" />}
+                          {isSelected && <Check className="w-4 h-4 text-amber-300" />}
                         </div>
                         <p className="text-[11px] text-neutral-400">{theme.desc}</p>
                       </button>
@@ -351,24 +347,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {activeTab === 'voice' && (
             <div className="space-y-6 animate-fade-in max-w-2xl">
               {/* Test Voice Banner */}
-              <div className="p-4 rounded-xl border border-cyan-800/60 bg-gradient-to-r from-cyan-950/40 via-neutral-900 to-indigo-950/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg">
+              <div className="p-4 rounded-xl border border-neutral-800 bg-neutral-900/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md">
                 <div>
-                  <div className="flex items-center gap-2 text-xs font-bold text-cyan-300 uppercase tracking-wider font-mono">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    Auditory Preview
+                  <div className="flex items-center gap-2 text-xs font-semibold text-white uppercase tracking-wider font-mono">
+                    <Sparkles className="w-3.5 h-3.5 text-neutral-400" />
+                    Speech Preview
                   </div>
-                  <p className="text-xs text-neutral-300 mt-1">
-                    Play a short arrogant voice sample using your currently selected voice, rate, and pitch depth.
+                  <p className="text-xs text-neutral-400 mt-1">
+                    Play a speech sample using your currently configured male voice, cadence, and pitch depth.
                   </p>
                 </div>
                 <button
                   type="button"
                   id="btn-test-voice"
                   onClick={handleTestVoice}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 ${
                     isPlayingTestAudio
-                      ? 'bg-rose-600 hover:bg-rose-500 text-white shadow-lg shadow-rose-600/20'
-                      : 'bg-cyan-500 hover:bg-cyan-400 text-neutral-950 shadow-lg shadow-cyan-500/20'
+                      ? 'bg-neutral-800 hover:bg-neutral-700 text-white border border-neutral-600'
+                      : 'bg-white hover:bg-neutral-200 text-black shadow-sm active:scale-95'
                   }`}
                 >
                   {isPlayingTestAudio ? (
@@ -391,7 +387,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   Device Speech Model
                 </label>
                 <p className="text-[11px] text-neutral-400 mb-2">
-                  Select a voice provided by your browser. Deeper and calm voices are prioritized automatically.
+                  Select a male voice synthesizer provided by your browser. Deep, calm, and mature voices are prioritized automatically.
                 </p>
                 <select
                   id="select-voice-model"
@@ -407,7 +403,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       toneBadge: selected?.analysis.badge,
                     });
                   }}
-                  className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3.5 py-2.5 text-xs text-neutral-200 focus:border-cyan-500 focus:outline-none"
+                  className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3.5 py-2.5 text-xs text-neutral-200 focus:border-neutral-500 focus:outline-none font-mono"
                 >
                   {availableVoices.length === 0 ? (
                     <option value={0}>Default System Voice</option>
@@ -425,7 +421,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div>
                 <div className="flex items-center justify-between text-xs mb-1.5">
                   <span className="font-semibold text-neutral-200">Speech Cadence (Rate)</span>
-                  <span className="font-mono text-cyan-400">{settings.voice.rate.toFixed(2)}x</span>
+                  <span className="font-mono text-amber-300 tabular-nums">{settings.voice.rate.toFixed(2)}x</span>
                 </div>
                 <input
                   type="range"
@@ -434,11 +430,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   step="0.05"
                   value={settings.voice.rate}
                   onChange={(e) => updateVoice({ rate: Number(e.target.value) })}
-                  className="w-full accent-cyan-400 cursor-pointer"
+                  className="w-full accent-amber-400 cursor-pointer"
                 />
-                <div className="flex justify-between text-[10px] text-neutral-500 font-mono mt-1">
+                <div className="flex justify-between text-[10px] text-neutral-500 font-mono mt-1 tabular-nums">
                   <span>0.75x (Deliberate)</span>
-                  <span>1.0x (Standard)</span>
+                  <span>1.00x (Standard)</span>
                   <span>1.35x (Rapid)</span>
                 </div>
               </div>
@@ -447,7 +443,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div>
                 <div className="flex items-center justify-between text-xs mb-1.5">
                   <span className="font-semibold text-neutral-200">Pitch Depth</span>
-                  <span className="font-mono text-indigo-400">
+                  <span className="font-mono text-amber-300 tabular-nums">
                     {(settings.voice.calibratedPitch || settings.voice.pitch || 0.85).toFixed(2)}x
                   </span>
                 </div>
@@ -461,12 +457,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     const p = Number(e.target.value);
                     updateVoice({ pitch: p, calibratedPitch: p });
                   }}
-                  className="w-full accent-indigo-400 cursor-pointer"
+                  className="w-full accent-amber-400 cursor-pointer"
                 />
-                <div className="flex justify-between text-[10px] text-neutral-500 font-mono mt-1">
-                  <span>0.65x (Deep Bass)</span>
-                  <span>0.85x (Calm &amp; Resonant)</span>
-                  <span>1.3x (High Pitch)</span>
+                <div className="flex justify-between text-[10px] text-neutral-500 font-mono mt-1 tabular-nums">
+                  <span>0.65x (Deep)</span>
+                  <span>1.00x (Standard)</span>
+                  <span>1.30x (Elevated)</span>
                 </div>
               </div>
 
@@ -475,7 +471,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div>
                   <div className="text-xs font-semibold text-neutral-200">Auto Speak Responses</div>
                   <div className="text-[11px] text-neutral-500">
-                    Automatically speak every assistant response aloud after generation
+                    Automatically speak assistant responses aloud after generation
                   </div>
                 </div>
                 <button
@@ -483,11 +479,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   id="toggle-auto-speak"
                   onClick={() => updateVoice({ autoSpeak: !settings.voice.autoSpeak })}
                   className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${
-                    settings.voice.autoSpeak ? 'bg-cyan-500' : 'bg-neutral-800'
+                    settings.voice.autoSpeak ? 'bg-amber-400' : 'bg-neutral-800'
                   }`}
                 >
                   <div
-                    className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                    className={`w-5 h-5 rounded-full ${
+                      settings.voice.autoSpeak ? 'bg-neutral-950' : 'bg-white'
+                    } transition-transform ${
                       settings.voice.autoSpeak ? 'translate-x-5' : 'translate-x-0'
                     }`}
                   />
@@ -496,10 +494,70 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
 
-          {/* ================= SECTION 3: CHAT EXPERIENCE ================= */}
+          {/* ================= SECTION 3: CHAT EXPERIENCE & PERSONA ================= */}
           {activeTab === 'chat' && (
             <div className="space-y-6 animate-fade-in max-w-2xl">
+              {/* Persona Selection */}
               <div>
+                <h3 className="text-sm font-semibold text-white mb-1">Intelligence Persona Mode</h3>
+                <p className="text-xs text-neutral-400 mb-3">
+                  Tailor LUXION's conversational posture, explanation depth, and tone.
+                </p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {[
+                    {
+                      id: 'intelligent',
+                      label: 'Intelligent & Balanced',
+                      desc: 'Calm, articulate, insightful, and respectful (Default)',
+                    },
+                    {
+                      id: 'analytical',
+                      label: 'Analytical & Technical',
+                      desc: 'Precise, code-first, and algorithmically structured',
+                    },
+                    {
+                      id: 'creative',
+                      label: 'Creative & Expansive',
+                      desc: 'Expressive narratives, thoughtful explorations',
+                    },
+                    {
+                      id: 'direct',
+                      label: 'Direct & Concise',
+                      desc: 'Minimalist answers with zero preamble or filler',
+                    },
+                  ].map((p) => {
+                    const isSelected = (settings.persona?.mode || 'intelligent') === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() =>
+                          onUpdateSettings({
+                            ...settings,
+                            persona: {
+                              ...(settings.persona || { mode: 'intelligent', languageStyle: 'auto' }),
+                              mode: p.id as any,
+                            },
+                          })
+                        }
+                        className={`p-3 rounded-xl border text-left transition-all ${
+                          isSelected
+                            ? 'border-amber-500/70 bg-neutral-900 shadow-sm ring-1 ring-amber-500/30'
+                            : 'border-neutral-800 bg-neutral-900/40 hover:border-neutral-700'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="text-xs font-semibold text-neutral-100">{p.label}</span>
+                          {isSelected && <Check className="w-4 h-4 text-amber-300" />}
+                        </div>
+                        <p className="text-[11px] text-neutral-400">{p.desc}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="border-t border-neutral-800/80 pt-4">
                 <h3 className="text-sm font-semibold text-white mb-1">Keyboard &amp; Input Controls</h3>
                 <p className="text-xs text-neutral-400 mb-4">
                   Configure behavior for the chat input box and message sending.
@@ -517,11 +575,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="button"
                       onClick={() => updateChat({ enterToSend: !settings.chat?.enterToSend })}
                       className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${
-                        (settings.chat?.enterToSend ?? true) ? 'bg-cyan-500' : 'bg-neutral-800'
+                        (settings.chat?.enterToSend ?? true) ? 'bg-amber-400' : 'bg-neutral-800'
                       }`}
                     >
                       <div
-                        className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                        className={`w-5 h-5 rounded-full ${
+                          (settings.chat?.enterToSend ?? true) ? 'bg-neutral-950' : 'bg-white'
+                        } transition-transform ${
                           (settings.chat?.enterToSend ?? true) ? 'translate-x-5' : 'translate-x-0'
                         }`}
                       />
@@ -539,11 +599,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="button"
                       onClick={() => updateChat({ renderMarkdown: !settings.chat?.renderMarkdown })}
                       className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${
-                        (settings.chat?.renderMarkdown ?? true) ? 'bg-cyan-500' : 'bg-neutral-800'
+                        (settings.chat?.renderMarkdown ?? true) ? 'bg-amber-400' : 'bg-neutral-800'
                       }`}
                     >
                       <div
-                        className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                        className={`w-5 h-5 rounded-full ${
+                          (settings.chat?.renderMarkdown ?? true) ? 'bg-neutral-950' : 'bg-white'
+                        } transition-transform ${
                           (settings.chat?.renderMarkdown ?? true) ? 'translate-x-5' : 'translate-x-0'
                         }`}
                       />
@@ -561,11 +623,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="button"
                       onClick={() => updateChat({ codePreview: !settings.chat?.codePreview })}
                       className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${
-                        (settings.chat?.codePreview ?? true) ? 'bg-cyan-500' : 'bg-neutral-800'
+                        (settings.chat?.codePreview ?? true) ? 'bg-amber-400' : 'bg-neutral-800'
                       }`}
                     >
                       <div
-                        className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                        className={`w-5 h-5 rounded-full ${
+                          (settings.chat?.codePreview ?? true) ? 'bg-neutral-950' : 'bg-white'
+                        } transition-transform ${
                           (settings.chat?.codePreview ?? true) ? 'translate-x-5' : 'translate-x-0'
                         }`}
                       />
@@ -574,11 +638,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* Typewriter & Mechanical Sounds */}
+              {/* Typewriter & Audio Ticks */}
               <div className="border-t border-neutral-800/80 pt-4">
-                <h3 className="text-sm font-semibold text-white mb-1">Typewriter Animation &amp; SFX</h3>
+                <h3 className="text-sm font-semibold text-white mb-1">Typewriter Animation &amp; Audio</h3>
                 <p className="text-xs text-neutral-400 mb-4">
-                  Word streaming speed and Web Audio mechanical click sounds.
+                  Word streaming speed and Web Audio mechanical click feedback.
                 </p>
 
                 <div className="space-y-3">
@@ -591,11 +655,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="button"
                       onClick={() => updateTypewriter({ enabled: !settings.typewriter.enabled })}
                       className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${
-                        settings.typewriter.enabled ? 'bg-cyan-500' : 'bg-neutral-800'
+                        settings.typewriter.enabled ? 'bg-amber-400' : 'bg-neutral-800'
                       }`}
                     >
                       <div
-                        className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                        className={`w-5 h-5 rounded-full ${
+                          settings.typewriter.enabled ? 'bg-neutral-950' : 'bg-white'
+                        } transition-transform ${
                           settings.typewriter.enabled ? 'translate-x-5' : 'translate-x-0'
                         }`}
                       />
@@ -610,9 +676,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         </label>
                         <div className="grid grid-cols-3 gap-2">
                           {[
-                            { id: 'fast', label: 'Fast Cyber', desc: '16ms / token' },
-                            { id: 'normal', label: 'Natural Pulse', desc: '22ms / token' },
-                            { id: 'cinematic', label: 'Cinematic Deep', desc: '35ms / token' },
+                            { id: 'fast', label: 'Fast Pulse', desc: '16ms / token' },
+                            { id: 'normal', label: 'Natural Flow', desc: '22ms / token' },
+                            { id: 'cinematic', label: 'Deliberate', desc: '35ms / token' },
                           ].map((profile) => {
                             const isSel = settings.typewriter.speed === profile.id;
                             return (
@@ -622,7 +688,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                 onClick={() => updateTypewriter({ speed: profile.id as any })}
                                 className={`p-2.5 rounded-xl border text-left transition-all ${
                                   isSel
-                                    ? 'border-cyan-500 bg-neutral-900 text-white'
+                                    ? 'border-amber-500/70 bg-neutral-900 text-white'
                                     : 'border-neutral-800 bg-neutral-900/40 text-neutral-400 hover:text-neutral-200'
                                 }`}
                               >
@@ -645,11 +711,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           type="button"
                           onClick={() => updateTypewriter({ soundEnabled: !settings.typewriter.soundEnabled })}
                           className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${
-                            settings.typewriter.soundEnabled ? 'bg-cyan-500' : 'bg-neutral-800'
+                            settings.typewriter.soundEnabled ? 'bg-amber-400' : 'bg-neutral-800'
                           }`}
                         >
                           <div
-                            className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                            className={`w-5 h-5 rounded-full ${
+                              settings.typewriter.soundEnabled ? 'bg-neutral-950' : 'bg-white'
+                            } transition-transform ${
                               settings.typewriter.soundEnabled ? 'translate-x-5' : 'translate-x-0'
                             }`}
                           />
@@ -668,13 +736,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <h3 className="text-sm font-semibold text-white">Local Knowledge &amp; Context Store</h3>
-                  <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/40 flex items-center gap-1">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Active Local Store
+                  <span className="text-[10px] font-mono text-amber-300 bg-neutral-900 px-2 py-0.5 rounded border border-amber-500/30 flex items-center gap-1">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                    Local Browser Store
                   </span>
                 </div>
                 <p className="text-xs text-neutral-400 mb-4">
-                  LUXION remembers personal preferences, names, and active project notes locally in your browser. All data stays on your device.
+                  LUXION remembers personal preferences, names, and active project notes locally in your browser. All data remains private on your device.
                 </p>
 
                 {/* Add Custom Fact/Memory */}
@@ -686,24 +754,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       placeholder="Key (e.g. user_name, tech_stack)"
                       value={newMemoryKey}
                       onChange={(e) => setNewMemoryKey(e.target.value)}
-                      className="rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 placeholder-neutral-500 focus:border-cyan-500 focus:outline-none"
+                      className="rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 placeholder-neutral-500 focus:border-amber-500 focus:outline-none"
                     />
                     <input
                       type="text"
-                      placeholder="Value (e.g. Abir, React + Tailwind)"
+                      placeholder="Value (e.g. Abir, React + TypeScript)"
                       value={newMemoryValue}
                       onChange={(e) => setNewMemoryValue(e.target.value)}
-                      className="rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 placeholder-neutral-500 focus:border-cyan-500 focus:outline-none"
+                      className="rounded-lg border border-neutral-800 bg-neutral-900 px-3 py-1.5 text-xs text-neutral-200 placeholder-neutral-500 focus:border-amber-500 focus:outline-none"
                     />
                   </div>
                   <button
                     type="button"
                     onClick={handleAddMemory}
                     disabled={!newMemoryKey.trim() || !newMemoryValue.trim()}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white bg-cyan-600 hover:bg-cyan-500 disabled:opacity-40 transition-colors"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-neutral-950 bg-white hover:bg-neutral-200 disabled:opacity-40 transition-colors shadow-sm"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    <span>Save Memory</span>
+                    <span>Save Context</span>
                   </button>
                 </div>
 
@@ -724,7 +792,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                   {memories.length === 0 ? (
                     <div className="p-6 text-center text-xs text-neutral-500 border border-neutral-800/80 rounded-xl bg-neutral-900/30">
-                      No memories stored yet. Tell LUXION your name or preferences in chat, or add one above.
+                      No memories stored yet. Mention your name or stack in chat, or add one above.
                     </div>
                   ) : (
                     memories.map((m) => (
@@ -733,7 +801,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         className="flex items-center justify-between p-3 rounded-xl border border-neutral-800 bg-neutral-900/40 text-xs"
                       >
                         <div className="min-w-0 pr-3">
-                          <span className="font-mono text-cyan-400 font-medium">{m.key}: </span>
+                          <span className="font-mono text-amber-300 font-medium">{m.key}: </span>
                           <span className="text-neutral-200">{m.value}</span>
                         </div>
                         <button
@@ -756,9 +824,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {activeTab === 'about' && (
             <div className="space-y-6 animate-fade-in max-w-2xl">
               <div className="flex items-center gap-3.5 p-4 rounded-xl border border-neutral-800 bg-neutral-900/60">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-cyan-600 via-indigo-600 to-neutral-900 border border-cyan-500/40 text-white shadow-lg shadow-cyan-500/15">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-b from-neutral-800 to-neutral-950 border border-amber-500/30 text-amber-200 shadow-md">
                   <svg
-                    className="h-6 w-6 text-white"
+                    className="h-6 w-6"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -776,27 +844,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <h2 className="text-lg font-bold tracking-[0.16em] text-neutral-100 font-sans">
                       LUXION
                     </h2>
-                    <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800/60">
-                      v3.5.2 Pro
+                    <span className="text-[10px] font-mono font-medium px-2 py-0.5 rounded-full bg-neutral-900 text-amber-200/90 border border-amber-500/30">
+                      Autonomous
                     </span>
                   </div>
-                  <p className="text-xs text-neutral-400 font-medium">Clean, intelligent AI.</p>
+                  <p className="text-xs text-neutral-400 font-medium">Clean, independent intelligence engine.</p>
                 </div>
               </div>
 
               <div className="rounded-xl border border-neutral-800/90 bg-neutral-900/60 p-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-800 border border-neutral-700/60 text-cyan-400">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-neutral-800 border border-neutral-700/60 text-amber-200">
                     <UserCheck className="h-5 w-5" />
                   </div>
                   <div>
                     <p className="text-[10px] uppercase font-mono tracking-wider text-neutral-400 font-semibold">
                       Founder &amp; Creator
                     </p>
-                    <p className="text-sm font-semibold text-neutral-100">Abir</p>
+                    <p className="text-sm font-semibold text-neutral-100">Abir Middya</p>
                   </div>
                 </div>
-                <span className="text-[10px] font-mono text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/40">
+                <span className="text-[10px] font-mono text-amber-300 bg-neutral-900 px-2 py-0.5 rounded border border-amber-500/30">
                   Original Architect
                 </span>
               </div>
@@ -804,20 +872,20 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 p-4 space-y-3">
                 <div className="flex items-center justify-between text-xs">
                   <span className="flex items-center gap-2 text-neutral-400 font-medium">
-                    <Cpu className="h-4 w-4 text-cyan-400" />
-                    Response Engine
+                    <Cpu className="h-4 w-4 text-amber-300" />
+                    Reasoning Engine
                   </span>
                   <span className="text-neutral-200 font-mono text-[11px]">LUXION 3.5 Cognitive Core</span>
                 </div>
 
                 <div className="border-t border-neutral-800/60 pt-2.5 flex items-center justify-between text-xs">
                   <span className="flex items-center gap-2 text-neutral-400 font-medium">
-                    <HardDrive className="h-4 w-4 text-indigo-400" />
+                    <HardDrive className="h-4 w-4 text-neutral-300" />
                     Memory Layer
                   </span>
-                  <span className="text-emerald-400 font-mono text-[11px] flex items-center gap-1">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                    Encrypted Local Browser Store
+                  <span className="text-neutral-200 font-mono text-[11px] flex items-center gap-1.5">
+                    <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                    Private Local Browser Store
                   </span>
                 </div>
 

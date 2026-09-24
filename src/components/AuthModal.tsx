@@ -33,8 +33,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
     try {
       const res = await sendOtp(email);
       setOtpSent(true);
-      setInfoMessage('Verification code has been generated and sent.');
+      setInfoMessage(res.message || 'Verification code has been generated.');
       if (res.devCode) {
+        setOtpCode(res.devCode);
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to send verification code.');
@@ -123,7 +124,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
               setInfoMessage(null);
             }}
             className={`rounded-lg py-1.5 font-medium transition-all ${
-              mode === 'password' ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'
+              mode === 'password'
+                ? 'bg-neutral-800 text-amber-200 border border-amber-500/30'
+                : 'text-neutral-400 hover:text-white'
             }`}
           >
             Password
@@ -136,7 +139,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
               setInfoMessage(null);
             }}
             className={`rounded-lg py-1.5 font-medium transition-all ${
-              mode === 'otp' ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'
+              mode === 'otp'
+                ? 'bg-neutral-800 text-amber-200 border border-amber-500/30'
+                : 'text-neutral-400 hover:text-white'
             }`}
           >
             OTP Code
@@ -149,7 +154,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
               setInfoMessage(null);
             }}
             className={`rounded-lg py-1.5 font-medium transition-all ${
-              mode === 'register' ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'
+              mode === 'register'
+                ? 'bg-neutral-800 text-amber-200 border border-amber-500/30'
+                : 'text-neutral-400 hover:text-white'
             }`}
           >
             Register
@@ -166,7 +173,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Your name"
-                className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-neutral-700"
+                className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500"
               />
             </div>
           )}
@@ -179,7 +186,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@example.com"
-              className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-neutral-700"
+              className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500"
             />
           </div>
 
@@ -192,7 +199,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-neutral-700"
+                className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-amber-500"
               />
             </div>
           )}
@@ -208,7 +215,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                     <button
                       type="button"
                       onClick={handleSendOtp}
-                      className="text-[10px] text-neutral-400 hover:text-white underline"
+                      className="text-[10px] text-amber-300 hover:text-amber-200 underline"
                     >
                       Resend
                     </button>
@@ -219,7 +226,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess
                     value={otpCode}
                     onChange={(e) => setOtpCode(e.target.value)}
                     placeholder="Enter code (e.g. 123456)"
-                    className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-center tracking-[0.25em] font-mono text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-neutral-700"
+                    className="w-full rounded-xl border border-neutral-800 bg-neutral-950 px-3 py-2 text-center tracking-[0.25em] font-mono text-sm text-white placeholder-neutral-600 focus:outline-none focus:border-amber-500"
                   />
                 </div>
               ) : (
