@@ -40,6 +40,7 @@ export interface HistorySession {
 
 export interface VoiceSettings {
   autoSpeak: boolean;
+  continuousVoiceMode?: boolean; // Persistent Hands-Free Voice Mode
   rate: number;
   pitch: number;
   voiceIndex: number;

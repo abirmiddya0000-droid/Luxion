@@ -218,6 +218,114 @@ async function startServer() {
     });
   });
 
+  // Cache and rate-limit tracking for TTS endpoint
+  const ttsServerCache = new Map<string, { audioBase64: string; mimeType: string; voice: string }>();
+  let ttsCooldownUntil = 0;
+
+  // High-Fidelity Studio Male Voice TTS Endpoint (Charon: Deep Baritone Male AI)
+  app.post('/api/tts', async (req, res) => {
+    const { text, voiceName } = req.body;
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({ error: 'Text required for TTS' });
+    }
+
+    const ai = getGeminiClient();
+    if (!ai) {
+      return res.status(503).json({ error: 'TTS unavailable: Missing API key', fallbackToLocal: true });
+    }
+
+    // Clean markdown, links, and code blocks before sending to TTS model
+    const cleanText = text
+      .replace(/```[a-z]*\s*[\s\S]*?```/gi, 'Here is the code.')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/^#{1,6}\s+(.*)$/gm, '$1.')
+      .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+      .replace(/https?:\/\/[^\s]+/gi, 'link')
+      .replace(/[*_~]/g, '')
+      .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}▼▲→←★•✓✕⋮]/gu, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!cleanText) {
+      return res.status(400).json({ error: 'Empty text after cleaning' });
+    }
+
+    // Use deep, mature, authoritative male voice Charon (or Fenrir)
+    const selectedVoice = voiceName === 'Fenrir' ? 'Fenrir' : 'Charon';
+    const cacheKey = `${selectedVoice}:${cleanText}`;
+
+    // Return cached audio if already generated (avoids consuming free tier quota)
+    const cached = ttsServerCache.get(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+
+    // If currently under rate limit cooldown, inform client to use local synthesizer
+    if (Date.now() < ttsCooldownUntil) {
+      return res.status(429).json({
+        error: 'TTS rate limit active. Falling back to local synthesizer.',
+        code: 'RATE_LIMIT_EXCEEDED',
+        fallbackToLocal: true,
+        retryAfter: Math.max(1, Math.ceil((ttsCooldownUntil - Date.now()) / 1000)),
+      });
+    }
+
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash-lite-tts',
+        contents: cleanText.slice(0, 1500),
+        config: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: selectedVoice,
+              },
+            },
+          },
+        },
+      });
+
+      const audioPart = response.candidates?.[0]?.content?.parts?.[0];
+      if (audioPart?.inlineData?.data) {
+        const payload = {
+          audioBase64: audioPart.inlineData.data,
+          mimeType: audioPart.inlineData.mimeType || 'audio/wav',
+          voice: selectedVoice,
+        };
+        // Store in cache
+        if (ttsServerCache.size > 100) {
+          const firstKey = ttsServerCache.keys().next().value;
+          if (firstKey) ttsServerCache.delete(firstKey);
+        }
+        ttsServerCache.set(cacheKey, payload);
+        return res.json(payload);
+      }
+
+      return res.status(500).json({ error: 'No audio returned', fallbackToLocal: true });
+    } catch (err: any) {
+      const errMsg = err?.message || '';
+      const isRateLimit =
+        err?.status === 429 ||
+        errMsg.includes('429') ||
+        errMsg.includes('RESOURCE_EXHAUSTED') ||
+        errMsg.includes('Quota exceeded');
+
+      if (isRateLimit) {
+        // Enforce cooldown so client falls back smoothly without error loops
+        ttsCooldownUntil = Date.now() + 30000;
+        return res.status(429).json({
+          error: 'TTS quota exceeded. Using local male speech synthesizer.',
+          code: 'RATE_LIMIT_EXCEEDED',
+          fallbackToLocal: true,
+          retryAfter: 30,
+        });
+      }
+
+      return res.status(500).json({ error: 'TTS generation failed', fallbackToLocal: true });
+    }
+  });
+
   // Main Chat & Command Endpoint
   app.post('/api/chat', async (req, res) => {
     const { prompt, history, command, attachment } = req.body;

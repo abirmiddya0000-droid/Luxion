@@ -37,11 +37,12 @@ const DEFAULT_APP_SETTINGS: AppSettings = {
   },
   voice: {
     autoSpeak: false,
+    continuousVoiceMode: false,
     rate: 0.96,
-    pitch: 0.85,
+    pitch: 0.93,
     voiceIndex: 0,
-    toneBadge: 'Cyber Android Girl • Deep',
-    calibratedPitch: 0.85,
+    toneBadge: 'Deep Baritone • Authoritative',
+    calibratedPitch: 0.93,
   },
   typewriter: {
     enabled: true,
@@ -93,11 +94,28 @@ export default function App() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        const voiceSettings = { ...DEFAULT_APP_SETTINGS.voice, ...(parsed.voice || {}) };
+        const vName = (voiceSettings.voiceName || '').toLowerCase();
+        const isFeminineName = /female|woman|girl|lady|zira|samantha|karen|jenny|aria|susan|google us english|victoria|hazel/.test(vName);
+        if (
+          isFeminineName ||
+          voiceSettings.toneBadge?.includes('Android Girl') ||
+          voiceSettings.pitch < 0.90 ||
+          !voiceSettings.calibratedPitch
+        ) {
+          voiceSettings.userSelectedVoice = false;
+          voiceSettings.voiceIndex = 0;
+          voiceSettings.pitch = DEFAULT_APP_SETTINGS.voice.pitch;
+          voiceSettings.calibratedPitch = DEFAULT_APP_SETTINGS.voice.calibratedPitch;
+          voiceSettings.rate = DEFAULT_APP_SETTINGS.voice.rate;
+          voiceSettings.toneBadge = DEFAULT_APP_SETTINGS.voice.toneBadge;
+          voiceSettings.voiceName = undefined;
+        }
         return {
           ...DEFAULT_APP_SETTINGS,
           ...parsed,
           persona: { ...DEFAULT_APP_SETTINGS.persona, ...(parsed.persona || {}) },
-          voice: { ...DEFAULT_APP_SETTINGS.voice, ...(parsed.voice || {}) },
+          voice: voiceSettings,
           typewriter: { ...DEFAULT_APP_SETTINGS.typewriter, ...(parsed.typewriter || {}) },
         };
       } catch (e) {}
@@ -144,6 +162,20 @@ export default function App() {
     setAppSettings(newSettings);
     localStorage.setItem('luxion_app_settings', JSON.stringify(newSettings));
   };
+
+  const handleUpdateVoiceSettings = useCallback((partial: Partial<VoiceSettings>) => {
+    setAppSettings((prev) => {
+      const updated: AppSettings = {
+        ...prev,
+        voice: {
+          ...prev.voice,
+          ...partial,
+        },
+      };
+      localStorage.setItem('luxion_app_settings', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
 
   const handleUpdateMessages = useCallback(
     (newMessages: ChatMessage[]) => {
@@ -214,8 +246,8 @@ export default function App() {
     const prioritized = TTSEngine.getPrioritizedVoices();
     const voiceObj = prioritized[appSettings.voice.voiceIndex]?.voice || TTSEngine.getBestMaleVoice();
     TTSEngine.speak(lastAssistantMsg.content, {
-      pitch: appSettings.voice.calibratedPitch || appSettings.voice.pitch || 0.90,
-      rate: appSettings.voice.rate || 0.97,
+      pitch: appSettings.voice.calibratedPitch || appSettings.voice.pitch || 0.93,
+      rate: appSettings.voice.rate || 0.96,
       voice: voiceObj,
       onEnd: () => setIsSpeaking(false),
       onError: () => setIsSpeaking(false),
@@ -393,6 +425,7 @@ export default function App() {
               onSendMessage={handleSendMessage}
               onExecuteCommand={handleExecuteCommand}
               onClearChat={handleClearCurrentChat}
+              onUpdateVoiceSettings={handleUpdateVoiceSettings}
             />
           </main>
 

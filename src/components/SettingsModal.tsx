@@ -109,8 +109,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     });
   };
 
-  // Test Voice button implementation: triggers a short arrogant snippet using currently selected voice and pitch
-  const handleTestVoice = async () => {
+  // Preview Voice button implementation: triggers a test sample using currently selected voice, rate, and pitch
+  const handlePreviewVoice = async () => {
     if (isPlayingTestAudio) {
       TTSEngine.stop();
       setIsPlayingTestAudio(false);
@@ -122,14 +122,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     const testSnippet =
       "I am LUXION. Present your query.";
 
-    // Select the chosen voice or fallback to best male voice
-    const selectedVoiceItem = availableVoices[settings.voice.voiceIndex];
-    const voiceObj = selectedVoiceItem?.voice || TTSEngine.getBestMaleVoice();
+    // If user explicitly chose a browser voice index, pass it; otherwise use Studio AI voice
+    const selectedVoiceItem = settings.voice.userSelectedVoice
+      ? availableVoices[settings.voice.voiceIndex]
+      : null;
+    const voiceObj = selectedVoiceItem?.voice || null;
 
     TTSEngine.speak(testSnippet, {
-      pitch: settings.voice.calibratedPitch || settings.voice.pitch || 0.90,
-      rate: settings.voice.rate || 0.97,
+      pitch: settings.voice.calibratedPitch || settings.voice.pitch || 0.93,
+      rate: settings.voice.rate || 0.96,
       voice: voiceObj,
+      useClientVoice: !!settings.voice.userSelectedVoice && !!voiceObj,
       onEnd: () => setIsPlayingTestAudio(false),
       onError: () => setIsPlayingTestAudio(false),
     });
@@ -346,7 +349,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {/* ================= SECTION 2: VOICE & TTS ================= */}
           {activeTab === 'voice' && (
             <div className="space-y-6 animate-fade-in max-w-2xl">
-              {/* Test Voice Banner */}
+              {/* Preview Voice Banner */}
               <div className="p-4 rounded-xl border border-neutral-800 bg-neutral-900/60 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-md">
                 <div>
                   <div className="flex items-center gap-2 text-xs font-semibold text-white uppercase tracking-wider font-mono">
@@ -354,28 +357,29 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     Speech Preview
                   </div>
                   <p className="text-xs text-neutral-400 mt-1">
-                    Play a speech sample using your currently configured male voice, cadence, and pitch depth.
+                    Play a short test sample to verify your current voice, cadence, and pitch depth before saving.
                   </p>
                 </div>
                 <button
                   type="button"
-                  id="btn-test-voice"
-                  onClick={handleTestVoice}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all shrink-0 ${
+                  id="btn-preview-voice"
+                  onClick={handlePreviewVoice}
+                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold transition-all shrink-0 ${
                     isPlayingTestAudio
                       ? 'bg-neutral-800 hover:bg-neutral-700 text-white border border-neutral-600'
                       : 'bg-white hover:bg-neutral-200 text-black shadow-sm active:scale-95'
                   }`}
+                  title="Preview current voice and acoustic settings"
                 >
                   {isPlayingTestAudio ? (
                     <>
-                      <Square className="w-3.5 h-3.5 fill-current" />
-                      <span>Stop Voice</span>
+                      <Square className="w-3.5 h-3.5 fill-current animate-pulse" />
+                      <span>Stop Preview</span>
                     </>
                   ) : (
                     <>
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>Test Voice</span>
+                      <Volume2 className="w-3.5 h-3.5" />
+                      <span>Preview Voice</span>
                     </>
                   )}
                 </button>
@@ -406,7 +410,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className="w-full rounded-xl border border-neutral-800 bg-neutral-900 px-3.5 py-2.5 text-xs text-neutral-200 focus:border-neutral-500 focus:outline-none font-mono"
                 >
                   {availableVoices.length === 0 ? (
-                    <option value={0}>Default System Voice</option>
+                    <option value={0}>LUXION Studio Voice (Charon • Deep Baritone Male)</option>
                   ) : (
                     availableVoices.map((item, idx) => (
                       <option key={`${item.voice.name}_${idx}`} value={idx}>
@@ -444,15 +448,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="flex items-center justify-between text-xs mb-1.5">
                   <span className="font-semibold text-neutral-200">Pitch Depth</span>
                   <span className="font-mono text-amber-300 tabular-nums">
-                    {(settings.voice.calibratedPitch || settings.voice.pitch || 0.85).toFixed(2)}x
+                    {(settings.voice.calibratedPitch || settings.voice.pitch || 0.93).toFixed(2)}x
                   </span>
                 </div>
                 <input
                   type="range"
-                  min="0.65"
-                  max="1.3"
-                  step="0.05"
-                  value={settings.voice.calibratedPitch || settings.voice.pitch || 0.85}
+                  min="0.85"
+                  max="1.15"
+                  step="0.01"
+                  value={settings.voice.calibratedPitch || settings.voice.pitch || 0.93}
                   onChange={(e) => {
                     const p = Number(e.target.value);
                     updateVoice({ pitch: p, calibratedPitch: p });
@@ -460,10 +464,74 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   className="w-full accent-amber-400 cursor-pointer"
                 />
                 <div className="flex justify-between text-[10px] text-neutral-500 font-mono mt-1 tabular-nums">
-                  <span>0.65x (Deep)</span>
-                  <span>1.00x (Standard)</span>
-                  <span>1.30x (Elevated)</span>
+                  <span>0.85x (Deep Baritone)</span>
+                  <span>0.93x (Authoritative Default)</span>
+                  <span>1.15x (Standard)</span>
                 </div>
+              </div>
+
+              {/* Quick Preview Voice Action */}
+              <div className="pt-1 flex items-center justify-between gap-3 border-t border-neutral-800/80">
+                <button
+                  type="button"
+                  id="btn-preview-voice-inline"
+                  onClick={handlePreviewVoice}
+                  className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold font-mono transition-all ${
+                    isPlayingTestAudio
+                      ? 'bg-neutral-800 text-white border border-neutral-600'
+                      : 'border border-neutral-700 bg-neutral-900 hover:bg-neutral-800 text-neutral-200 hover:text-white active:scale-95'
+                  }`}
+                  title="Preview Voice Sample"
+                >
+                  {isPlayingTestAudio ? (
+                    <>
+                      <Square className="w-3.5 h-3.5 fill-current animate-pulse text-neutral-300" />
+                      <span>Stop Preview</span>
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 className="w-3.5 h-3.5 text-neutral-300" />
+                      <span>Preview Voice</span>
+                    </>
+                  )}
+                </button>
+                <span className="text-[11px] text-neutral-400 font-mono hidden sm:inline">
+                  Sample: &ldquo;I am LUXION. Present your query.&rdquo;
+                </span>
+              </div>
+
+              {/* Persistent Voice Mode Toggle */}
+              <div className="p-3.5 rounded-xl border border-neutral-800 bg-neutral-900/50 flex items-center justify-between">
+                <div className="pr-4">
+                  <div className="text-xs font-semibold text-neutral-200 flex items-center gap-2">
+                    <span>Continuous Voice Mode</span>
+                    {settings.voice.continuousVoiceMode && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-white text-black font-semibold font-mono tracking-wider">
+                        ACTIVE
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-neutral-400 mt-0.5">
+                    Automatically starts the microphone after each AI response, enabling continuous hands-free interaction.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  id="toggle-continuous-voice-mode"
+                  onClick={() => updateVoice({ continuousVoiceMode: !settings.voice.continuousVoiceMode })}
+                  className={`w-11 h-6 rounded-full transition-colors relative p-0.5 shrink-0 ${
+                    settings.voice.continuousVoiceMode ? 'bg-white' : 'bg-neutral-800'
+                  }`}
+                  title="Toggle continuous hands-free voice mode"
+                >
+                  <div
+                    className={`w-5 h-5 rounded-full ${
+                      settings.voice.continuousVoiceMode ? 'bg-black' : 'bg-white'
+                    } transition-transform ${
+                      settings.voice.continuousVoiceMode ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
               </div>
 
               {/* Auto Speak Toggle */}
@@ -479,12 +547,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   id="toggle-auto-speak"
                   onClick={() => updateVoice({ autoSpeak: !settings.voice.autoSpeak })}
                   className={`w-11 h-6 rounded-full transition-colors relative p-0.5 ${
-                    settings.voice.autoSpeak ? 'bg-amber-400' : 'bg-neutral-800'
+                    settings.voice.autoSpeak ? 'bg-white' : 'bg-neutral-800'
                   }`}
+                  title="Toggle auto speak responses"
                 >
                   <div
                     className={`w-5 h-5 rounded-full ${
-                      settings.voice.autoSpeak ? 'bg-neutral-950' : 'bg-white'
+                      settings.voice.autoSpeak ? 'bg-black' : 'bg-white'
                     } transition-transform ${
                       settings.voice.autoSpeak ? 'translate-x-5' : 'translate-x-0'
                     }`}

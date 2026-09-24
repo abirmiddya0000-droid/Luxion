@@ -58,6 +58,7 @@ interface ChatViewProps {
   ) => Promise<string>;
   onExecuteCommand?: (command: string) => void;
   onClearChat?: () => void;
+  onUpdateVoiceSettings?: (voice: Partial<VoiceSettings>) => void;
 }
 
 export const ChatView: React.FC<ChatViewProps> = ({
@@ -69,6 +70,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   onSendMessage,
   onExecuteCommand,
   onClearChat,
+  onUpdateVoiceSettings,
 }) => {
   const [input, setInput] = useState('');
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
@@ -76,9 +78,9 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [isListening, setIsListening] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [playbackState, setPlaybackState] = useState<'idle' | 'playing' | 'paused'>('idle');
-  const [isVoiceMode, setIsVoiceMode] = useState(false);
+  const [isVoiceMode, setIsVoiceMode] = useState<boolean>(() => !!voiceSettings.continuousVoiceMode);
   const [voiceModeState, setVoiceModeState] = useState<'idle' | 'listening' | 'thinking' | 'speaking'>('idle');
-  const isVoiceModeRef = useRef(false);
+  const isVoiceModeRef = useRef<boolean>(!!voiceSettings.continuousVoiceMode);
   isVoiceModeRef.current = isVoiceMode;
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [showPlusMenu, setShowPlusMenu] = useState(false);
@@ -121,6 +123,24 @@ export const ChatView: React.FC<ChatViewProps> = ({
       STTEngine.stopListening();
     };
   }, []);
+
+  // Sync persistent Continuous Voice Mode setting from AppSettings
+  useEffect(() => {
+    const isContinuous = !!voiceSettings.continuousVoiceMode;
+    setIsVoiceMode(isContinuous);
+    isVoiceModeRef.current = isContinuous;
+
+    if (isContinuous) {
+      if (voiceModeState === 'idle' && !speakingId && !isLoading) {
+        startVoiceModeListening();
+      }
+    } else {
+      if (voiceModeState === 'listening') {
+        STTEngine.stopListening();
+        setVoiceModeState('idle');
+      }
+    }
+  }, [voiceSettings.continuousVoiceMode]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -188,9 +208,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
   const getActiveMaleVoice = () => {
     if (voiceSettings.userSelectedVoice && availableVoices[voiceSettings.voiceIndex]) {
-      return availableVoices[voiceSettings.voiceIndex];
+      const selected = availableVoices[voiceSettings.voiceIndex];
+      const analysis = TTSEngine.analyzeVoice(selected);
+      if (analysis.isMasculine) {
+        return selected;
+      }
     }
-    return TTSEngine.getBestMaleVoice() || availableVoices[voiceSettings.voiceIndex] || null;
+    return TTSEngine.getBestMaleVoice();
   };
 
   const toggleListening = () => {
@@ -328,6 +352,13 @@ export const ChatView: React.FC<ChatViewProps> = ({
         if (isVoiceModeRef.current && capturedTranscript.trim() && voiceModeState === 'listening') {
           setVoiceModeState('thinking');
           handleSend(capturedTranscript.trim());
+        } else if (isVoiceModeRef.current && voiceModeState === 'listening') {
+          // If browser speech recognition closed due to silence timeout, smoothly re-listen so voice mode remains continuous
+          setTimeout(() => {
+            if (isVoiceModeRef.current && voiceModeState === 'listening') {
+              startVoiceModeListening();
+            }
+          }, 350);
         }
       },
     });
@@ -342,9 +373,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
       TTSEngine.stop();
       setSpeakingId(null);
       setPlaybackState('idle');
+      onUpdateVoiceSettings?.({ continuousVoiceMode: false });
     } else {
       setIsVoiceMode(true);
       isVoiceModeRef.current = true;
+      onUpdateVoiceSettings?.({ continuousVoiceMode: true });
       startVoiceModeListening();
     }
   };
@@ -519,6 +552,11 @@ export const ChatView: React.FC<ChatViewProps> = ({
     } catch (err: any) {
       if (isVoiceModeRef.current) {
         setVoiceModeState('idle');
+        setTimeout(() => {
+          if (isVoiceModeRef.current && voiceModeState === 'idle') {
+            startVoiceModeListening();
+          }
+        }, 2200);
       }
       const errorMessage: ChatMessage = {
         id: `err_${Date.now()}`,
@@ -1098,7 +1136,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
                   <>
                     <span className="h-2 w-2 rounded-full bg-white animate-ping" />
                     <span className="text-white font-medium">Listening...</span>
-                    <span className="text-neutral-500 text-[11px] hidden sm:inline">(Speak directly to LUXION)</span>
+                    <span className="text-neutral-400 text-[11px] hidden sm:inline">• Hands-Free Active</span>
                   </>
                 )}
                 {voiceModeState === 'thinking' && (
