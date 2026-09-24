@@ -10,12 +10,12 @@
  * external inference endpoint without modifying the UI or chat flow.
  */
 
-import { LUXION_IDENTITY } from '../config/luxionIdentity';
-import { MemoryItem, MemoryService, MemoryCategory } from './memory';
-import { KnowledgeBase, KnowledgeEntry, KnowledgeCategory } from './knowledge';
-import { Luxion35Provider } from './providers/luxion35Provider';
-import { SupportedLanguage, detectLanguage } from './i18n';
-import { devDiagnostics } from './devDiagnostics';
+import { LUXION_IDENTITY } from '../config/luxionIdentity.js';
+import { MemoryService, type MemoryItem, type MemoryCategory } from './memory.ts';
+import { KnowledgeBase, type KnowledgeEntry, type KnowledgeCategory } from './knowledge.ts';
+import { Luxion35Provider } from './providers/luxion35Provider.ts';
+import { detectLanguage, type SupportedLanguage } from './i18n.ts';
+import { devDiagnostics } from './devDiagnostics.ts';
 
 export type LuxionIntent =
   | 'greeting'
@@ -1395,4 +1395,15 @@ export class LuxionBrain {
 }
 
 export { Luxion35Provider };
+
+// Auto-delegate to server if executed directly as entrypoint (e.g. on Render)
+if (typeof process !== 'undefined' && process.argv && process.argv[1]) {
+  const arg = process.argv[1].replace(/\\/g, '/');
+  if (arg.endsWith('luxionBrain.ts') || arg.endsWith('luxionBrain.js') || arg.endsWith('luxionBrain')) {
+    console.log('[LUXION] Direct entrypoint detected in luxionBrain. Launching LUXION Server...');
+    import('../../server.ts').catch((err) => {
+      console.error('[LUXION] Failed to boot server from luxionBrain:', err);
+    });
+  }
+}
 

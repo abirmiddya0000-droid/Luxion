@@ -1,6 +1,6 @@
-import { User, ChatAttachment } from '../types';
-import { LuxionBrain } from './luxionBrain';
-import { MemoryService, MemoryItem } from './memory';
+import type { User, ChatAttachment } from '../types.ts';
+import { LuxionBrain } from './luxionBrain.ts';
+import { MemoryService, type MemoryItem } from './memory.ts';
 
 export async function checkServerHealth(): Promise<{
   status: string;

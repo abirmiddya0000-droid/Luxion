@@ -14,10 +14,10 @@
  *   "2. Implementation Strategy", "3. Execution"), no corporate filler, no sycophantic greetings.
  */
 
-import { LUXION_IDENTITY } from '../../config/luxionIdentity';
-import { MemoryItem, MemoryService, MemoryCategory } from '../memory';
-import { KnowledgeBase, KnowledgeEntry } from '../knowledge';
-import {
+import { LUXION_IDENTITY } from '../../config/luxionIdentity.js';
+import { MemoryService, type MemoryItem, type MemoryCategory } from '../memory.ts';
+import { KnowledgeBase, type KnowledgeEntry } from '../knowledge.ts';
+import type {
   BrainResponse,
   ConversationContext,
   LuxionAttachment,
@@ -26,8 +26,8 @@ import {
   LuxionMessage,
   LuxionResponseProvider,
   PersonalityState,
-} from '../luxionBrain';
-import { SupportedLanguage, detectLanguage } from '../i18n';
+} from '../luxionBrain.ts';
+import { detectLanguage, type SupportedLanguage } from '../i18n.ts';
 
 export type LocalCapability =
   | 'coding_tools'
