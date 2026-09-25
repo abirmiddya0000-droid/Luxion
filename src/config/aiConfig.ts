@@ -18,7 +18,7 @@ export const AI_CONFIG: AIModelConfig = {
   provider: 'gemini',
 
   // Current free developer tier Gemini Flash model suitable for chat, reasoning, coding, and general knowledge.
-  model: 'gemini-3.5-flash',
+  model: 'gemini-3.8-flash',
 
   // Default response generation tuning
   maxOutputTokens: 4096,
