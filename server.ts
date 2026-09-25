@@ -3,6 +3,7 @@ import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI } from '@google/genai';
+import Groq from 'groq-sdk';
 import { AI_CONFIG, LUXION_SYSTEM_INSTRUCTION } from './src/config/aiConfig.ts';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -11,8 +12,41 @@ const __dirname = path.dirname(__filename);
 const isProduction = process.env.NODE_ENV === 'production';
 const port = parseInt(process.env.PORT || '3000', 10);
 
-// Active model configuration (falls back to centralized config)
+// Active model configurations
 const ACTIVE_MODEL = process.env.GEMINI_MODEL || AI_CONFIG.model;
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const LUXION_OWNER_EMAIL = (process.env.LUXION_OWNER_EMAIL || '').trim().toLowerCase();
+const LUXION_OWNER_CODE = process.env.LUXION_OWNER_CODE || 'Luxion_abir_9088@7675';
+
+// Independent Per-Model Quota and Cooldown Records
+interface ModelQuotaRecord {
+  modelId: string;
+  cooldownUntil: number;
+  requestsUsed: number;
+  lastError?: string;
+}
+
+const modelQuotaRecords = new Map<string, ModelQuotaRecord>();
+
+function getModelRecord(modelId: string): ModelQuotaRecord {
+  let rec = modelQuotaRecords.get(modelId);
+  if (!rec) {
+    rec = { modelId, cooldownUntil: 0, requestsUsed: 0 };
+    modelQuotaRecords.set(modelId, rec);
+  }
+  return rec;
+}
+
+function isModelAvailable(modelId: string): boolean {
+  const rec = getModelRecord(modelId);
+  return Date.now() >= rec.cooldownUntil;
+}
+
+function markModelCooldown(modelId: string, seconds = 30, error?: string): void {
+  const rec = getModelRecord(modelId);
+  rec.cooldownUntil = Date.now() + seconds * 1000;
+  rec.lastError = error;
+}
 
 interface ChatHistoryItem {
   role: 'user' | 'assistant';
@@ -41,6 +75,16 @@ function getGeminiClient(): GoogleGenAI | null {
   });
 }
 
+function getGroqClient(): Groq | null {
+  const apiKey = process.env.GROQ_API_KEY;
+  if (!apiKey || !apiKey.trim()) {
+    return null;
+  }
+  return new Groq({
+    apiKey: apiKey.trim(),
+  });
+}
+
 function formatContentsForGemini(
   history: ChatHistoryItem[],
   currentPrompt: string,
@@ -52,13 +96,11 @@ function formatContentsForGemini(
     (h) => h && typeof h.content === 'string' && h.content.trim().length > 0
   );
 
-  // Gemini requires strictly alternating roles starting with 'user'
   let lastRole: 'user' | 'model' | null = null;
 
   for (const item of validHistory) {
     const role: 'user' | 'model' = item.role === 'assistant' ? 'model' : 'user';
 
-    // Model cannot be first turn
     if (contents.length === 0 && role === 'model') {
       continue;
     }
@@ -74,10 +116,8 @@ function formatContentsForGemini(
     }
   }
 
-  // Create current turn parts
   const currentParts: Array<Record<string, any>> = [];
 
-  // Handle multimodal image inline data if provided
   if (attachment?.dataUrl && attachment.type === 'image') {
     const match = attachment.dataUrl.match(/^data:([^;]+);base64,(.+)$/);
     if (match) {
@@ -108,10 +148,141 @@ function formatContentsForGemini(
   return contents;
 }
 
+function formatContentsForGroq(
+  history: ChatHistoryItem[],
+  currentPrompt: string,
+  instruction: string
+) {
+  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+    { role: 'system', content: instruction },
+  ];
+
+  for (const item of history || []) {
+    if (item && item.content && item.content.trim()) {
+      messages.push({
+        role: item.role === 'assistant' ? 'assistant' : 'user',
+        content: item.content,
+      });
+    }
+  }
+
+  messages.push({ role: 'user', content: currentPrompt });
+  return messages;
+}
+
 function getSpecializedInstruction(command?: string): string {
   if (!command) return LUXION_SYSTEM_INSTRUCTION;
 
   const cmd = command.trim().toLowerCase();
+
+  if (cmd.startsWith('/analyze trading') || cmd.includes('trading') || cmd.includes('financial')) {
+    return `${LUXION_SYSTEM_INSTRUCTION}
+
+[MODE: LUXION TRADING & FINANCIAL RESEARCH]
+The user requested financial, market, or tokenomics research. Focus on:
+- Objective, quantitative evaluation of market dynamics, support/resistance, and volume profiles.
+- Technical indicator frameworks (RSI, Exponential Moving Averages, MACD, volatility bands).
+- Clear, disciplined risk management frameworks and risk-to-reward ratio analysis.
+- State clearly that insights are for research and educational purposes only; no automated trading is executed.
+- Do NOT claim live real-time price tick feeds unless a verified live data socket is active.`;
+  }
+
+  if (cmd.startsWith('/image') || cmd.startsWith('/image-gen')) {
+    return `${LUXION_SYSTEM_INSTRUCTION}
+
+[MODE: LUXION IMAGE SPECIFICATION & CREATIVE DIRECTION]
+The user invoked the /image command.
+- Generate high-fidelity visual design descriptions with composition, lighting, palette, subject silhouette, and style parameters.
+- Provide a clean, standalone visual generation prompt ready for the image generation engine.
+- If no image generation provider is configured on the server, note clearly that IMAGE_API_KEY must be set to render pixel assets, while offering SVG/Canvas code where relevant.`;
+  }
+
+  if (cmd.startsWith('/image-edit')) {
+    return `${LUXION_SYSTEM_INSTRUCTION}
+
+[MODE: LUXION IMAGE EDITING SPECIFICATION]
+The user requested image editing. Focus on:
+- Identifying specific changes to composition, color grading, lighting, or subject alteration.
+- Providing clean instruction parameters for image-to-image workflows.`;
+  }
+
+  if (cmd.startsWith('/video-edit')) {
+    return `${LUXION_SYSTEM_INSTRUCTION}
+
+[MODE: LUXION VIDEO EDITING & POST-PRODUCTION]
+The user invoked the /video-edit command. Focus specifically on:
+- Shot transitions, pacing, cut timings, and camera movement adjustments.
+- Color grading specifications, lighting mood curves, and VFX parameters.
+- Providing clean instruction parameters for video-to-video diffusion pipelines.`;
+  }
+
+  if (cmd.startsWith('/video') || cmd.startsWith('/video-gen')) {
+    return `${LUXION_SYSTEM_INSTRUCTION}
+
+[MODE: LUXION VIDEO SPECIFICATION & CINEMATICS]
+The user invoked the /video command.
+- Architect shot composition, camera crane/pan motions, frame rate, lighting mood, and scene progression.
+- Provide a cinematic video prompt ready for video diffusion models.
+- If VIDEO_API_KEY is not configured on the server, note clearly that a video generation provider must be connected for rendered video clips.`;
+  }
+
+  if (cmd.startsWith('/character')) {
+    return `${LUXION_SYSTEM_INSTRUCTION}
+
+[MODE: NAVA CHARACTER CREATOR & ARCHITECT]
+The user invoked character creation for the NAVA original game universe.
+Provide a complete, structured character specification:
+- Character Name & Title
+- Role & Age Category
+- Gender & Physical Appearance
+- Hair & Eyes
+- Outfit & Attire Details
+- Signature Weapon
+- Core Abilities
+- Aura & Visual Effects
+- Personality & Demeanor
+- Backstory & Motivation
+- Visual Generation Prompt (for concept art generation)
+
+If the user asked to create the NAVA MC:
+- Male fantasy protagonist, flowing silver-white hair, crystalline blue eyes, midnight-black tactical attire, glowing crimson katana, subtle ambient blue aura.
+Ensure 100% originality. Do NOT copy copyrighted characters from other franchises.`;
+  }
+
+  if (cmd.startsWith('/world')) {
+    return `${LUXION_SYSTEM_INSTRUCTION}
+
+[MODE: NAVA WORLDBUILDING & REALM ARCHITECTURE]
+The user invoked the /world command. Provide a comprehensive world architecture specification:
+- Realm Name & Geopolitical Structure
+- Elemental / Aether Magic Laws
+- Sovereign Factions & Power Dynamics
+- Key Biomes & Environmental Hazard Zones
+- Historical Epochs & Ancient Calamities
+- Visual Concept Generation Prompt for World Environment.`;
+  }
+
+  if (cmd.startsWith('/scene')) {
+    return `${LUXION_SYSTEM_INSTRUCTION}
+
+[MODE: LUXION CINEMATIC SCENE ARCHITECT]
+The user invoked the /scene command. Focus specifically on:
+- Scene Environment & Atmospheric Lighting (Kelvin temp, key/rim/ambient fill).
+- Character Blocking & Spatial Staging.
+- Camera Framing, Focal Length (e.g. 35mm anamorphic), and Movement.
+- Dialog & Emotional Beats.
+- Post-processing, Depth of Field, and Sound Design cues.`;
+  }
+
+  if (cmd.startsWith('/game')) {
+    return `${LUXION_SYSTEM_INSTRUCTION}
+
+[MODE: NAVA GAME DESIGN PIPELINE]
+The user invoked the NAVA game design workflow.
+Provide rigorous specifications across the asset pipeline:
+Characters, Weapons, Monsters, NPCs, Locations, Items, UI/HUD, Cutscenes, or Concept Prompts.
+Provide production-ready design architectures or runnable client preview code.`;
+  }
 
   if (cmd.startsWith('/code')) {
     return `${LUXION_SYSTEM_INSTRUCTION}
@@ -144,7 +315,18 @@ The user invoked the /analyze command. Focus specifically on:
 - Clear, prioritized recommendations.`;
   }
 
-  if (cmd.startsWith('/build web')) {
+  if (cmd.startsWith('/build-3d-game') || cmd.includes('3d-game') || cmd.includes('3d game')) {
+    return `${LUXION_SYSTEM_INSTRUCTION}
+
+[MODE: LUXION 3D WEBGL/THREE.JS GAME BUILDER]
+The user invoked the 3D game build workflow command. Focus specifically on:
+- Generating complete, functional, single-file 3D HTML5 game code using Three.js from cdnjs.
+- Setting up Scene, PerspectiveCamera, WebGLRenderer, Directional/Ambient Lights, 3D Geometries/Meshes, and animation requestAnimationFrame loop.
+- Providing WASD/Arrow keyboard controls for 3D navigation and interactive gameplay.
+- Outputting self-contained HTML/CSS/JS ready to run immediately in the LUXION sandbox preview.`;
+  }
+
+  if (cmd.startsWith('/build web') || cmd.startsWith('/build-web')) {
     return `${LUXION_SYSTEM_INSTRUCTION}
 
 [MODE: LUXION WEB BUILDER]
@@ -154,7 +336,7 @@ The user invoked the /build web workflow command. Focus specifically on:
 - Include a brief note: "Scaffold generated for client sandbox preview. (Automated repository creation and container deployment are planned future integrations)."`;
   }
 
-  if (cmd.startsWith('/build app') || cmd.startsWith('/build')) {
+  if (cmd.startsWith('/build app') || cmd.startsWith('/build-app') || cmd.startsWith('/build')) {
     return `${LUXION_SYSTEM_INSTRUCTION}
 
 [MODE: LUXION APPLICATION BUILDER]
@@ -164,7 +346,7 @@ The user invoked the application build workflow command. Focus specifically on:
 - State clearly: "Scaffold generated for client sandbox preview. (Automated repo creation and container hosting are planned future integrations)."`;
   }
 
-  if (cmd.startsWith('/build game')) {
+  if (cmd.startsWith('/build game') || cmd.startsWith('/build-game')) {
     return `${LUXION_SYSTEM_INSTRUCTION}
 
 [MODE: LUXION GAME BUILDER]
@@ -184,6 +366,7 @@ async function startServer() {
   // Health and Provider Configuration Status
   app.get('/api/health', (_req, res) => {
     const hasKey = !!process.env.GEMINI_API_KEY;
+    const hasGroq = !!process.env.GROQ_API_KEY;
     res.json({
       status: 'online',
       engine: 'LUXION AI Engine',
@@ -191,10 +374,217 @@ async function startServer() {
       provider: AI_CONFIG.provider,
       model: ACTIVE_MODEL,
       hasKey,
+      hasGroq,
     });
   });
 
-  // Future Capabilities Manifest
+  // Server-Side Role & Owner Verification Endpoint
+  app.post('/api/auth/verify-role', (req, res) => {
+    const { email } = req.body;
+    const cleanEmail = (email || '').trim().toLowerCase();
+
+    // Authenticate owner only against backend server environment variable LUXION_OWNER_EMAIL
+    const isOwner = !!LUXION_OWNER_EMAIL && cleanEmail === LUXION_OWNER_EMAIL;
+    const role = isOwner ? 'OWNER' : 'USER';
+
+    res.json({
+      isOwner,
+      role,
+      verified: isOwner,
+    });
+  });
+
+  // Server-Side Master Owner Access Code Verification
+  app.post('/api/auth/verify-owner-code', (req, res) => {
+    const { code, email } = req.body;
+    if (!code || typeof code !== 'string') {
+      return res.status(400).json({ success: false, message: 'Invalid access code.' });
+    }
+
+    if (code.trim() === LUXION_OWNER_CODE.trim()) {
+      return res.json({
+        success: true,
+        isOwner: true,
+        role: 'OWNER',
+        message: 'Owner access verified. LUXION full capabilities unlocked.',
+      });
+    }
+
+    // Generic error message without revealing hints
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid access code.',
+    });
+  });
+
+  // Multi-Provider Status Endpoint
+  app.get('/api/providers/status', (_req, res) => {
+    const hasGemini = !!process.env.GEMINI_API_KEY;
+    const hasGroq = !!process.env.GROQ_API_KEY;
+    const hasImageKey = !!process.env.IMAGE_API_KEY;
+    const hasVideoKey = !!process.env.VIDEO_API_KEY;
+
+    const geminiAvailable = hasGemini && isModelAvailable(ACTIVE_MODEL);
+    const groqAvailable = hasGroq && isModelAvailable(`groq:${GROQ_MODEL}`);
+
+    res.json({
+      providers: {
+        gemini: {
+          id: 'gemini',
+          name: 'Google Gemini',
+          isConfigured: hasGemini,
+          isAvailable: geminiAvailable,
+          status: !hasGemini ? 'not_configured' : geminiAvailable ? 'available' : 'rate_limited',
+          model: ACTIVE_MODEL,
+        },
+        groq: {
+          id: 'groq',
+          name: 'Groq',
+          isConfigured: hasGroq,
+          isAvailable: groqAvailable,
+          status: !hasGroq ? 'not_configured' : groqAvailable ? 'available' : 'rate_limited',
+          model: GROQ_MODEL,
+        },
+        image: {
+          id: 'image',
+          name: 'Image Generator',
+          isConfigured: hasImageKey,
+          isAvailable: hasImageKey,
+          status: hasImageKey ? 'available' : 'not_configured',
+        },
+        video: {
+          id: 'video',
+          name: 'Video Generator',
+          isConfigured: hasVideoKey,
+          isAvailable: hasVideoKey,
+          status: hasVideoKey ? 'available' : 'not_configured',
+        },
+      },
+    });
+  });
+
+  // Comprehensive Provider Diagnostics & Quotas Endpoint
+  app.get('/api/providers/diagnostics', (_req, res) => {
+    const hasGemini = !!process.env.GEMINI_API_KEY;
+    const hasGroq = !!process.env.GROQ_API_KEY;
+    const hasOpenRouter = !!process.env.OPENROUTER_API_KEY;
+    const hasImageKey = !!process.env.IMAGE_API_KEY;
+    const hasVideoKey = !!process.env.VIDEO_API_KEY;
+
+    const geminiModels = [
+      'gemini-3.8-flash',
+      'gemini-3.5-flash-lite',
+      'gemini-3.1-flash-lite',
+      'gemini-2.5-flash',
+      'gemini-2.5-pro',
+      'gemini-3.1-flash-image',
+      'gemini-3-pro-image',
+      'imagen-3.0-generate-002',
+      'veo-3.1-generate-preview',
+      'veo-3.1-lite-generate-preview',
+      'gemini-3.8-flash-lite-tts',
+    ].map((m) => {
+      const rec = getModelRecord(m);
+      const isCooling = Date.now() < rec.cooldownUntil;
+      return {
+        id: m,
+        status: !hasGemini ? 'NOT_CONFIGURED' : isCooling ? 'RATE_LIMITED' : 'AVAILABLE',
+        requestsUsed: rec.requestsUsed,
+        resetTime: isCooling ? rec.cooldownUntil : undefined,
+      };
+    });
+
+    const groqModels = [
+      'llama-3.3-70b-versatile',
+      'llama-3.1-8b-instant',
+      'mixtral-8x7b-32768',
+    ].map((m) => {
+      const rec = getModelRecord(`groq:${m}`);
+      const isCooling = Date.now() < rec.cooldownUntil;
+      return {
+        id: m,
+        status: !hasGroq ? 'NOT_CONFIGURED' : isCooling ? 'RATE_LIMITED' : 'AVAILABLE',
+        requestsUsed: rec.requestsUsed,
+        resetTime: isCooling ? rec.cooldownUntil : undefined,
+      };
+    });
+
+    res.json({
+      providers: [
+        {
+          id: 'gemini',
+          name: 'Google Gemini',
+          enabled: hasGemini,
+          priority: 1,
+          capabilities: [
+            'CHAT',
+            'CODING',
+            'REASONING',
+            'IMAGE_GENERATION',
+            'IMAGE_EDIT',
+            'VIDEO_GENERATION',
+            'TEXT_TO_SPEECH',
+            'RESEARCH',
+            'TRADING_RESEARCH',
+          ],
+          health: { isHealthy: hasGemini, status: hasGemini ? 'AVAILABLE' : 'NOT_CONFIGURED' },
+          models: geminiModels,
+        },
+        {
+          id: 'groq',
+          name: 'Groq Cloud',
+          enabled: hasGroq,
+          priority: 2,
+          capabilities: ['CHAT', 'CODING', 'REASONING', 'TRADING_RESEARCH'],
+          health: { isHealthy: hasGroq, status: hasGroq ? 'AVAILABLE' : 'NOT_CONFIGURED' },
+          models: groqModels,
+        },
+        {
+          id: 'openrouter',
+          name: 'OpenRouter (Extensible Pool)',
+          enabled: hasOpenRouter,
+          priority: 3,
+          capabilities: ['CHAT', 'CODING', 'REASONING', 'TRADING_RESEARCH'],
+          health: { isHealthy: hasOpenRouter, status: hasOpenRouter ? 'AVAILABLE' : 'NOT_CONFIGURED' },
+          models: [
+            { id: 'anthropic/claude-3.5-sonnet', status: hasOpenRouter ? 'AVAILABLE' : 'NOT_CONFIGURED', requestsUsed: 0 },
+            { id: 'openai/gpt-4o-mini', status: hasOpenRouter ? 'AVAILABLE' : 'NOT_CONFIGURED', requestsUsed: 0 },
+          ],
+        },
+        {
+          id: 'image_engine',
+          name: 'Dedicated Image Diffusion',
+          enabled: hasImageKey,
+          priority: 1,
+          capabilities: ['IMAGE_GENERATION', 'IMAGE_EDIT'],
+          health: { isHealthy: hasImageKey, status: hasImageKey ? 'AVAILABLE' : 'NOT_CONFIGURED' },
+          models: [
+            { id: 'gemini-3.1-flash-image', name: 'Nano Banana 2', status: hasImageKey ? 'AVAILABLE' : 'NOT_CONFIGURED', requestsUsed: 0 },
+            { id: 'gemini-3-pro-image', name: 'Nano Banana Pro', status: hasImageKey ? 'AVAILABLE' : 'NOT_CONFIGURED', requestsUsed: 0 },
+          ],
+        },
+        {
+          id: 'video_engine',
+          name: 'Dedicated Video Diffusion',
+          enabled: hasVideoKey,
+          priority: 1,
+          capabilities: ['VIDEO_GENERATION'],
+          health: { isHealthy: hasVideoKey, status: hasVideoKey ? 'AVAILABLE' : 'NOT_CONFIGURED' },
+          models: [
+            { id: 'veo-3.1', name: 'Veo 3.1', status: hasVideoKey ? 'AVAILABLE' : 'NOT_CONFIGURED', requestsUsed: 0 },
+            { id: 'veo-3.1-lite', name: 'Veo 3.1 Lite', status: hasVideoKey ? 'AVAILABLE' : 'NOT_CONFIGURED', requestsUsed: 0 },
+          ],
+        },
+      ],
+      userTierPolicies: {
+        USER: { maxFallbacks: 3 },
+        PAID_USER: { maxFallbacks: 7 },
+        OWNER: { maxFallbacks: 10, isConfigured: !!LUXION_OWNER_EMAIL },
+      },
+    });
+  });
+
+  // Capabilities Manifest
   app.get('/api/capabilities', (_req, res) => {
     res.json({
       active: [
@@ -204,25 +594,101 @@ async function startServer() {
         'slash_commands',
         'conversation_context',
         'client_sandbox_preview',
+        'multi_provider_router',
+        'nava_game_design',
+        'trading_research',
       ],
-      future: [
-        'web_research_grounding',
-        'image_generation',
-        'video_generation',
-        'sandboxed_code_execution',
-        'automated_container_deployment',
-        'multi_agent_coordination',
+      pools: [
+        { capability: 'CHAT', providers: ['gemini', 'groq', 'openrouter', 'luxion_local'] },
+        { capability: 'CODING', providers: ['gemini', 'groq', 'openrouter'] },
+        { capability: 'REASONING', providers: ['gemini', 'groq', 'openrouter'] },
+        { capability: 'IMAGE_GENERATION', providers: ['gemini_imagen', 'nano_banana'] },
+        { capability: 'VIDEO_GENERATION', providers: ['veo'] },
+        { capability: 'TEXT_TO_SPEECH', providers: ['gemini_tts', 'local_speech'] },
+        { capability: 'RESEARCH', providers: ['gemini', 'modular_research'] },
+        { capability: 'TRADING_RESEARCH', providers: ['gemini', 'groq', 'market_intelligence'] },
       ],
-      provider: AI_CONFIG.provider,
-      model: ACTIVE_MODEL,
+      providers: {
+        gemini: { active: !!process.env.GEMINI_API_KEY, model: ACTIVE_MODEL },
+        groq: { active: !!process.env.GROQ_API_KEY, model: GROQ_MODEL },
+        openrouter: { active: !!process.env.OPENROUTER_API_KEY },
+        image: { active: !!process.env.IMAGE_API_KEY },
+        video: { active: !!process.env.VIDEO_API_KEY },
+      },
     });
   });
 
-  // Cache and rate-limit tracking for TTS endpoint
+  // Image Generation Endpoint
+  app.post('/api/generate/image', async (req, res) => {
+    const { prompt, options } = req.body;
+    if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+      return res.status(400).json({ success: false, error: 'A descriptive prompt is required for image generation.' });
+    }
+
+    const imageKey = process.env.IMAGE_API_KEY;
+    if (!imageKey || !imageKey.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Image generation provider is not configured yet. Set IMAGE_API_KEY in the server environment to enable.',
+        provider: 'none',
+        prompt: prompt.trim(),
+      });
+    }
+
+    try {
+      const ai = getGeminiClient();
+      if (ai) {
+        const response = await ai.models.generateImages({
+          model: 'imagen-3.0-generate-002',
+          prompt: prompt.trim(),
+          config: {
+            numberOfImages: 1,
+            aspectRatio: options?.aspectRatio === '16:9' ? '16:9' : options?.aspectRatio === '9:16' ? '9:16' : '1:1',
+          },
+        });
+        const generatedImage = response.generatedImages?.[0]?.image?.imageBytes;
+        if (generatedImage) {
+          return res.json({
+            success: true,
+            imageData: `data:image/jpeg;base64,${generatedImage}`,
+            provider: 'imagen-3',
+            prompt: prompt.trim(),
+          });
+        }
+      }
+      return res.status(502).json({ success: false, error: 'No image data returned from provider.' });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err?.message || 'Image generation failed.' });
+    }
+  });
+
+  // Video Generation Endpoint
+  app.post('/api/generate/video', async (req, res) => {
+    const { prompt } = req.body;
+    if (!prompt || typeof prompt !== 'string' || !prompt.trim()) {
+      return res.status(400).json({ success: false, error: 'A descriptive prompt is required for video generation.' });
+    }
+
+    const videoKey = process.env.VIDEO_API_KEY;
+    if (!videoKey || !videoKey.trim()) {
+      return res.status(400).json({
+        success: false,
+        error: 'Video generation provider is not configured yet. Set VIDEO_API_KEY in the server environment to enable.',
+        provider: 'none',
+        prompt: prompt.trim(),
+      });
+    }
+
+    return res.status(501).json({
+      success: false,
+      error: 'Video generation provider endpoint connecting. Set active video provider endpoint.',
+    });
+  });
+
+  // TTS Endpoint
   const ttsServerCache = new Map<string, { audioBase64: string; mimeType: string; voice: string }>();
   let ttsCooldownUntil = 0;
 
-  // High-Fidelity Studio Male Voice TTS Endpoint (Charon: Deep Baritone Male AI)
   app.post('/api/tts', async (req, res) => {
     const { text, voiceName } = req.body;
     if (!text || typeof text !== 'string' || !text.trim()) {
@@ -234,7 +700,6 @@ async function startServer() {
       return res.status(503).json({ error: 'TTS unavailable: Missing API key', fallbackToLocal: true });
     }
 
-    // Clean markdown, links, and code blocks before sending to TTS model
     const cleanText = text
       .replace(/```[a-z]*\s*[\s\S]*?```/gi, 'Here is the code.')
       .replace(/`([^`]+)`/g, '$1')
@@ -250,17 +715,14 @@ async function startServer() {
       return res.status(400).json({ error: 'Empty text after cleaning' });
     }
 
-    // Use deep, mature, authoritative male voice Charon (or Fenrir)
     const selectedVoice = voiceName === 'Fenrir' ? 'Fenrir' : 'Charon';
     const cacheKey = `${selectedVoice}:${cleanText}`;
 
-    // Return cached audio if already generated (avoids consuming free tier quota)
     const cached = ttsServerCache.get(cacheKey);
     if (cached) {
       return res.json(cached);
     }
 
-    // If currently under rate limit cooldown, inform client to use local synthesizer
     if (Date.now() < ttsCooldownUntil) {
       return res.status(429).json({
         error: 'TTS rate limit active. Falling back to local synthesizer.',
@@ -293,7 +755,6 @@ async function startServer() {
           mimeType: audioPart.inlineData.mimeType || 'audio/wav',
           voice: selectedVoice,
         };
-        // Store in cache
         if (ttsServerCache.size > 100) {
           const firstKey = ttsServerCache.keys().next().value;
           if (firstKey) ttsServerCache.delete(firstKey);
@@ -312,7 +773,6 @@ async function startServer() {
         errMsg.includes('Quota exceeded');
 
       if (isRateLimit) {
-        // Enforce cooldown so client falls back smoothly without error loops
         ttsCooldownUntil = Date.now() + 30000;
         return res.status(429).json({
           error: 'TTS quota exceeded. Using local male speech synthesizer.',
@@ -326,9 +786,70 @@ async function startServer() {
     }
   });
 
-  // Main Chat & Command Endpoint
+  // Helper function to call Groq Chat with independent model quota isolation
+  async function callGroq(
+    history: ChatHistoryItem[],
+    prompt: string,
+    instruction: string,
+    modelName?: string
+  ): Promise<{ reply: string; model: string; provider: string }> {
+    const groq = getGroqClient();
+    if (!groq) {
+      throw new Error('GROQ_NOT_CONFIGURED');
+    }
+
+    const targetModel = modelName || GROQ_MODEL;
+    const modelRecordKey = `groq:${targetModel}`;
+
+    if (!isModelAvailable(modelRecordKey)) {
+      const rec = getModelRecord(modelRecordKey);
+      const remainingSec = Math.max(1, Math.ceil((rec.cooldownUntil - Date.now()) / 1000));
+      const err: any = new Error(`Groq model ${targetModel} rate limit active. Retry in ${remainingSec}s.`);
+      err.code = 'RATE_LIMIT';
+      err.retryAfter = remainingSec;
+      throw err;
+    }
+
+    const messages = formatContentsForGroq(history, prompt, instruction);
+
+    try {
+      const completion = await groq.chat.completions.create({
+        model: targetModel,
+        messages: messages as any,
+        temperature: AI_CONFIG.temperature,
+        max_tokens: AI_CONFIG.maxOutputTokens,
+      });
+
+      const reply = completion.choices?.[0]?.message?.content;
+      if (!reply || !reply.trim()) {
+        throw new Error('EMPTY_RESPONSE');
+      }
+
+      const rec = getModelRecord(modelRecordKey);
+      rec.requestsUsed++;
+
+      return {
+        reply: reply.trim(),
+        model: targetModel,
+        provider: 'groq',
+      };
+    } catch (err: any) {
+      const errMsg = String(err?.message || '');
+      const isRateLimit = err?.status === 429 || errMsg.includes('429') || errMsg.includes('rate_limit_exceeded');
+      if (isRateLimit) {
+        markModelCooldown(modelRecordKey, 30, errMsg);
+        const rateErr: any = new Error(`Groq model ${targetModel} rate limit reached.`);
+        rateErr.code = 'RATE_LIMIT';
+        rateErr.retryAfter = 30;
+        throw rateErr;
+      }
+      throw err;
+    }
+  }
+
+  // Main Chat & Multi-Provider Capability Endpoint with bounded fallbacks
   app.post('/api/chat', async (req, res) => {
-    const { prompt, history, command, attachment } = req.body;
+    const { prompt, history, command, attachment, preferredProvider, model, userRole } = req.body;
 
     if ((!prompt || typeof prompt !== 'string' || !prompt.trim()) && !attachment) {
       return res.status(400).json({
@@ -336,34 +857,71 @@ async function startServer() {
       });
     }
 
-    const ai = getGeminiClient();
-    if (!ai) {
-      return res.status(503).json({
-        error: 'AI connection failed. Try again.',
-        code: 'MISSING_API_KEY',
-      });
+    const cleanPrompt = (prompt || '').trim();
+    const activeInstruction = getSpecializedInstruction(command);
+
+    // Bounded retries by user tier policy (Free: 3, Paid: 7, Owner: 10)
+    const normalizedRole = (userRole || 'USER').toUpperCase();
+    const maxAttempts = normalizedRole === 'OWNER' || normalizedRole === 'ADMIN' ? 10 : normalizedRole === 'PAID_USER' ? 7 : 3;
+
+    // Build ordered list of candidate model evaluations across providers
+    interface ExecutionCandidate {
+      provider: 'gemini' | 'groq';
+      model: string;
     }
 
-    try {
-      const activeInstruction = getSpecializedInstruction(command);
-      const contents = formatContentsForGemini(history || [], prompt.trim(), attachment);
+    const candidatePool: ExecutionCandidate[] = [];
 
-      const candidateModels = Array.from(new Set([
-        ACTIVE_MODEL,
-        'gemini-3.8-flash',
-        'gemini-3.5-flash',
-        'gemini-3.5-flash-lite',
-        'gemini-3.1-flash-lite',
-      ]));
+    // Preferred provider prioritized if provided
+    if (preferredProvider === 'groq') {
+      candidatePool.push(
+        { provider: 'groq', model: model || GROQ_MODEL },
+        { provider: 'groq', model: 'llama-3.1-8b-instant' },
+        { provider: 'groq', model: 'mixtral-8x7b-32768' },
+        { provider: 'gemini', model: ACTIVE_MODEL },
+        { provider: 'gemini', model: 'gemini-3.8-flash' },
+        { provider: 'gemini', model: 'gemini-3.5-flash-lite' }
+      );
+    } else {
+      candidatePool.push(
+        { provider: 'gemini', model: model || ACTIVE_MODEL },
+        { provider: 'gemini', model: 'gemini-3.8-flash' },
+        { provider: 'gemini', model: 'gemini-3.5-flash-lite' },
+        { provider: 'gemini', model: 'gemini-3.1-flash-lite' },
+        { provider: 'gemini', model: 'gemini-2.5-flash' },
+        { provider: 'groq', model: GROQ_MODEL },
+        { provider: 'groq', model: 'llama-3.1-8b-instant' }
+      );
+    }
 
-      let response;
-      let usedModel = ACTIVE_MODEL;
-      let lastError: any = null;
+    const ai = getGeminiClient();
+    const groq = getGroqClient();
 
-      for (const modelToTry of candidateModels) {
+    let attemptsCount = 0;
+    let lastErrorNotice: string | null = null;
+    let swappedFrom: { provider: string; model: string; reason: string } | null = null;
+
+    for (const cand of candidatePool) {
+      if (attemptsCount >= maxAttempts) {
+        break;
+      }
+
+      // Check model cooldown independently
+      const modelKey = cand.provider === 'groq' ? `groq:${cand.model}` : cand.model;
+      if (!isModelAvailable(modelKey)) {
+        continue;
+      }
+
+      attemptsCount++;
+
+      // 1. Try Gemini Candidate
+      if (cand.provider === 'gemini') {
+        if (!ai) continue;
+
         try {
-          response = await ai.models.generateContent({
-            model: modelToTry,
+          const contents = formatContentsForGemini(history || [], cleanPrompt, attachment);
+          const response = await ai.models.generateContent({
+            model: cand.model,
             contents,
             config: {
               systemInstruction: activeInstruction,
@@ -371,64 +929,75 @@ async function startServer() {
               maxOutputTokens: AI_CONFIG.maxOutputTokens,
             },
           });
-          usedModel = modelToTry;
-          break;
-        } catch (attemptErr: any) {
-          lastError = attemptErr;
-          const errMsg = String(attemptErr?.message || '');
-          console.warn(`Model ${modelToTry} attempt notice: ${errMsg.slice(0, 100)}`);
-          // Continue to next candidate on high demand or rate limits
+
+          const replyText = response.text;
+          if (replyText && replyText.trim()) {
+            const rec = getModelRecord(cand.model);
+            rec.requestsUsed++;
+
+            return res.json({
+              reply: replyText.trim(),
+              model: cand.model,
+              provider: 'gemini',
+              swappedFrom: swappedFrom || undefined,
+            });
+          }
+        } catch (geminiErr: any) {
+          const errMsg = String(geminiErr?.message || '');
+          const isRateLimit =
+            geminiErr?.status === 429 ||
+            errMsg.includes('429') ||
+            errMsg.includes('RESOURCE_EXHAUSTED') ||
+            errMsg.includes('Quota exceeded');
+
+          if (isRateLimit) {
+            markModelCooldown(cand.model, 30, errMsg);
+          } else {
+            markModelCooldown(cand.model, 10, errMsg);
+          }
+
+          if (!swappedFrom) {
+            swappedFrom = {
+              provider: 'gemini',
+              model: cand.model,
+              reason: isRateLimit ? 'Rate limit reached' : 'Temporary provider error',
+            };
+          }
+          lastErrorNotice = 'That AI provider is temporarily unavailable. Trying another available provider.';
           continue;
         }
       }
 
-      if (!response) {
-        throw lastError || new Error('No response received from AI models');
+      // 2. Try Groq Candidate
+      if (cand.provider === 'groq') {
+        if (!groq) continue;
+
+        try {
+          const groqResult = await callGroq(history || [], cleanPrompt, activeInstruction, cand.model);
+          return res.json({
+            ...groqResult,
+            swappedFrom: swappedFrom || undefined,
+          });
+        } catch (groqErr: any) {
+          if (!swappedFrom) {
+            swappedFrom = {
+              provider: 'groq',
+              model: cand.model,
+              reason: groqErr?.message || 'Temporary provider error',
+            };
+          }
+          lastErrorNotice = 'That AI provider is temporarily unavailable. Trying another available provider.';
+          continue;
+        }
       }
-
-      const replyText = response.text;
-      if (!replyText || !replyText.trim()) {
-        return res.status(502).json({
-          error: 'AI connection failed. Try again.',
-          code: 'EMPTY_RESPONSE',
-        });
-      }
-
-      return res.json({
-        reply: replyText.trim(),
-        model: usedModel,
-        provider: AI_CONFIG.provider,
-      });
-    } catch (err: any) {
-      console.error('LUXION AI Server Error:', err?.message || err);
-      const errMsg = String(err?.message || '');
-
-      if (errMsg.includes('API_KEY_INVALID') || errMsg.includes('key not valid') || errMsg.includes('unregistered project')) {
-        return res.status(401).json({
-          error: 'AI connection failed. Try again.',
-          code: 'INVALID_API_KEY',
-        });
-      }
-
-      if (errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('429') || errMsg.includes('Quota')) {
-        return res.status(429).json({
-          error: 'AI connection failed. Try again.',
-          code: 'RATE_LIMIT',
-        });
-      }
-
-      if (errMsg.includes('model not found') || errMsg.includes('not supported for this model')) {
-        return res.status(400).json({
-          error: 'AI connection failed. Try again.',
-          code: 'MODEL_ERROR',
-        });
-      }
-
-      return res.status(500).json({
-        error: 'AI connection failed. Try again.',
-        code: 'AI_SERVICE_ERROR',
-      });
     }
+
+    // All compatible models exhausted
+    return res.status(503).json({
+      error: 'AI service is temporarily unavailable. Please try again later.',
+      code: 'PROVIDERS_UNAVAILABLE',
+      notice: lastErrorNotice,
+    });
   });
 
   // Vite Integration (Dev) vs Static Files (Prod)

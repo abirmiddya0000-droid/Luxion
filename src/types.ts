@@ -3,7 +3,7 @@ export interface User {
   email: string;
   name: string;
   avatar: string;
-  role: 'member' | 'pro' | 'admin' | 'guest';
+  role: 'USER' | 'PAID_USER' | 'OWNER' | 'ADMIN' | 'member' | 'pro' | 'admin' | 'guest';
   credits: number;
   createdAt: string;
 }
@@ -27,6 +27,12 @@ export interface ChatMessage {
   isError?: boolean;
   reactions?: Record<string, number>;
   userReactions?: string[];
+  mediaType?: 'image' | 'video';
+  mediaUrl?: string;
+  mediaData?: string;
+  mediaPrompt?: string;
+  provider?: string;
+  generationLoading?: 'image' | 'video';
 }
 
 export interface HistorySession {

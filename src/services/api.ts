@@ -26,7 +26,8 @@ export async function sendChatMessage(
   history: Array<{ role: 'user' | 'assistant'; content: string }>,
   attachment?: ChatAttachment | null,
   providedMemories?: MemoryItem[],
-  command?: string
+  command?: string,
+  preferredProvider?: string
 ): Promise<string> {
   // 1. Automatically extract and persist any stated user facts/preferences into local memory
   if (message && typeof window !== 'undefined') {
@@ -39,7 +40,7 @@ export async function sendChatMessage(
   // 2. Retrieve relevant contextual memories
   const activeMemories = providedMemories || (typeof window !== 'undefined' ? MemoryService.findRelevant(message) : []);
 
-  // 3. Make real server-side request to Gemini API
+  // 3. Make real server-side request to Multi-Provider AI router
   try {
     const response = await fetch('/api/chat', {
       method: 'POST',
@@ -50,6 +51,7 @@ export async function sendChatMessage(
         prompt: message,
         history,
         command,
+        preferredProvider,
         attachment: attachment
           ? {
               type: attachment.type,
@@ -80,6 +82,54 @@ export async function sendChatMessage(
     }
     throw new Error('AI connection failed. Try again.');
   }
+}
+
+export async function generateImageAPI(
+  prompt: string,
+  options?: { aspectRatio?: string; style?: string }
+): Promise<{ success: boolean; imageUrl?: string; imageData?: string; provider?: string; error?: string }> {
+  try {
+    const response = await fetch('/api/generate/image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, options }),
+    });
+    return await response.json();
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || 'Failed to connect to image generation endpoint.',
+    };
+  }
+}
+
+export async function generateVideoAPI(
+  prompt: string,
+  options?: { duration?: number; aspectRatio?: string }
+): Promise<{ success: boolean; videoUrl?: string; videoData?: string; provider?: string; error?: string }> {
+  try {
+    const response = await fetch('/api/generate/video', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt, options }),
+    });
+    return await response.json();
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err?.message || 'Failed to connect to video generation endpoint.',
+    };
+  }
+}
+
+export async function getProvidersStatusAPI(): Promise<any> {
+  try {
+    const res = await fetch('/api/providers/status');
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {}
+  return null;
 }
 
 const STORAGE_USERS_KEY = 'luxion_registered_users';
@@ -181,3 +231,60 @@ export async function verifyOtp(email: string, code: string): Promise<{ token: s
   const token = `lx_tok_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
   return { token, user };
 }
+
+export async function verifyOwnerStatusAPI(email?: string): Promise<{ isOwner: boolean; role: 'USER' | 'PAID_USER' | 'OWNER' | 'ADMIN' }> {
+  try {
+    const res = await fetch('/api/auth/verify-role', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {}
+  return { isOwner: false, role: 'USER' };
+}
+
+export async function getProviderDiagnosticsAPI(): Promise<any> {
+  try {
+    const res = await fetch('/api/providers/diagnostics');
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {}
+  return null;
+}
+
+export async function verifyOwnerCodeAPI(
+  code: string,
+  email?: string
+): Promise<{ success: boolean; isOwner?: boolean; role?: string; message: string }> {
+  try {
+    const res = await fetch('/api/auth/verify-owner-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, email }),
+    });
+    const data = await res.json();
+    if (res.ok && data.success) {
+      return {
+        success: true,
+        isOwner: true,
+        role: 'OWNER',
+        message: data.message || 'Owner access verified.',
+      };
+    }
+    return {
+      success: false,
+      message: data?.message || 'Invalid access code.',
+    };
+  } catch {
+    return {
+      success: false,
+      message: 'Invalid access code.',
+    };
+  }
+}
+
+

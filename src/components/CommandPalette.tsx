@@ -5,14 +5,80 @@ export interface CommandItem {
   command: string;
   label: string;
   description: string;
-  category: 'build' | 'tools' | 'session';
+  category: 'build' | 'tools' | 'session' | 'creative';
 }
 
 export const AVAILABLE_COMMANDS: CommandItem[] = [
   {
+    command: '/image',
+    label: 'Generate Image',
+    description: 'Create an original concept image or character render',
+    category: 'creative',
+  },
+  {
+    command: '/image-gen',
+    label: 'Image Generator',
+    description: 'High-fidelity visual generation pipeline',
+    category: 'creative',
+  },
+  {
+    command: '/image-edit',
+    label: 'Edit Image',
+    description: 'Instruct modifications to uploaded or generated image',
+    category: 'creative',
+  },
+  {
+    command: '/video',
+    label: 'Generate Video',
+    description: 'Create cinematic video clip from prompt or concept',
+    category: 'creative',
+  },
+  {
+    command: '/video-gen',
+    label: 'Video Generator',
+    description: 'Cinematic video generation pipeline',
+    category: 'creative',
+  },
+  {
+    command: '/video-edit',
+    label: 'Edit Video',
+    description: 'Post-production transitions, pacing, and color curves',
+    category: 'creative',
+  },
+  {
+    command: '/character',
+    label: 'Create Character',
+    description: 'Generate original NAVA character specification',
+    category: 'creative',
+  },
+  {
+    command: '/world',
+    label: 'World Architecture',
+    description: 'Design comprehensive world realms, factions, and aether laws',
+    category: 'creative',
+  },
+  {
+    command: '/scene',
+    label: 'Cinematic Scene',
+    description: 'Structure dramatic scene blocking, lighting, and camera paths',
+    category: 'creative',
+  },
+  {
+    command: '/game',
+    label: 'NAVA Game Pipeline',
+    description: 'Design original game assets (weapons, UI, monsters, lore)',
+    category: 'creative',
+  },
+  {
     command: '/build web',
     label: 'Build Web Application',
     description: 'Start web project workflow and sandbox',
+    category: 'build',
+  },
+  {
+    command: '/build-web',
+    label: 'Build Web Scaffold',
+    description: 'Self-contained HTML5/CSS/JS web application scaffold',
     category: 'build',
   },
   {
@@ -22,10 +88,34 @@ export const AVAILABLE_COMMANDS: CommandItem[] = [
     category: 'build',
   },
   {
+    command: '/build-game',
+    label: 'Build 2D Canvas Game',
+    description: 'Playable 2D HTML5 canvas game with game loop and controls',
+    category: 'build',
+  },
+  {
+    command: '/build-3d-game',
+    label: 'Build 3D WebGL Game',
+    description: 'Playable 3D game using Three.js/WebGL runnable in sandbox preview',
+    category: 'build',
+  },
+  {
     command: '/build app',
     label: 'Build Application',
     description: 'Start responsive app prototype workflow',
     category: 'build',
+  },
+  {
+    command: '/build-app',
+    label: 'Build Responsive App',
+    description: 'Self-contained responsive web app component structure',
+    category: 'build',
+  },
+  {
+    command: '/owner',
+    label: 'Master Owner Access',
+    description: 'Verify Master Owner authorization and unlock privileges',
+    category: 'tools',
   },
   {
     command: '/build website',

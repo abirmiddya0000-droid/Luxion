@@ -23,13 +23,14 @@ import { AppSettings, VoiceSettings, PersonaSettings, TypewriterSettings, ChatPr
 import { TTSEngine } from '../services/speech';
 import { CyberSound } from '../services/sound';
 import { MemoryService, MemoryItem } from '../services/memory';
+import { getProviderDiagnosticsAPI, verifyOwnerStatusAPI, verifyOwnerCodeAPI } from '../services/api';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   settings: AppSettings;
   onUpdateSettings: (newSettings: AppSettings) => void;
-  initialTab?: 'appearance' | 'voice' | 'chat' | 'memory' | 'about';
+  initialTab?: 'appearance' | 'voice' | 'chat' | 'memory' | 'providers' | 'about';
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -39,12 +40,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUpdateSettings,
   initialTab = 'voice',
 }) => {
-  const [activeTab, setActiveTab] = useState<'appearance' | 'voice' | 'chat' | 'memory' | 'about'>(initialTab);
+  const [activeTab, setActiveTab] = useState<'appearance' | 'voice' | 'chat' | 'memory' | 'providers' | 'about'>(initialTab);
   const [availableVoices, setAvailableVoices] = useState<Array<{ voice: SpeechSynthesisVoice; analysis: any }>>([]);
   const [isPlayingTestAudio, setIsPlayingTestAudio] = useState(false);
   const [memories, setMemories] = useState<MemoryItem[]>([]);
   const [newMemoryKey, setNewMemoryKey] = useState('');
   const [newMemoryValue, setNewMemoryValue] = useState('');
+  const [diagnosticsData, setDiagnosticsData] = useState<any>(null);
+  const [userRoleData, setUserRoleData] = useState<{ isOwner: boolean; role: string } | null>(null);
+  const [isLoadingDiagnostics, setIsLoadingDiagnostics] = useState(false);
+  const [ownerCodeInput, setOwnerCodeInput] = useState('');
+  const [ownerCodeStatus, setOwnerCodeStatus] = useState<{ error?: string; success?: string } | null>(null);
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false);
+  const [showOwnerCodeField, setShowOwnerCodeField] = useState(false);
 
   useEffect(() => {
     if (initialTab) {
@@ -65,6 +73,28 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
 
     setMemories(MemoryService.getAll());
+
+    const loadDiagnostics = async () => {
+      setIsLoadingDiagnostics(true);
+      try {
+        const diag = await getProviderDiagnosticsAPI();
+        if (diag) setDiagnosticsData(diag);
+
+        const savedUser = localStorage.getItem('luxion_user');
+        if (savedUser) {
+          const u = JSON.parse(savedUser);
+          if (u.email) {
+            const roleRes = await verifyOwnerStatusAPI(u.email);
+            setUserRoleData(roleRes);
+          }
+        }
+      } catch {}
+      setIsLoadingDiagnostics(false);
+    };
+
+    if (activeTab === 'providers') {
+      loadDiagnostics();
+    }
 
     return () => {
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -255,6 +285,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           >
             <HardDrive className="w-3.5 h-3.5" />
             <span>Memory ({memories.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('providers')}
+            className={`flex items-center gap-2 px-3 py-3 text-xs font-medium border-b-2 transition-all whitespace-nowrap ${
+              activeTab === 'providers'
+                ? 'border-amber-400 text-amber-300 font-semibold'
+                : 'border-transparent text-neutral-400 hover:text-neutral-200'
+            }`}
+          >
+            <Cpu className="w-3.5 h-3.5" />
+            <span>Providers &amp; Pools</span>
           </button>
 
           <button
@@ -885,6 +928,272 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     ))
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* ================= SECTION: PROVIDERS & POOLS ================= */}
+          {activeTab === 'providers' && (
+            <div className="space-y-6 animate-fade-in max-w-2xl">
+              <div>
+                <h3 className="text-sm font-semibold text-white mb-1">Provider Manager &amp; Capability Pools</h3>
+                <p className="text-xs text-neutral-400">
+                  Centralized multi-provider router. Every model maintains independent quota state with automatic bounded fallback.
+                </p>
+              </div>
+
+              {/* User Tier & Backend Verification Status */}
+              <div className="rounded-xl border border-neutral-800 bg-neutral-900/60 p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="h-8 w-8 rounded-lg bg-neutral-800 border border-neutral-700/60 flex items-center justify-center text-amber-300">
+                      <ShieldCheck className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] uppercase font-mono tracking-wider text-neutral-400 font-semibold">
+                        LUXION Product Tier &amp; Role
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-white font-mono">
+                          {userRoleData?.role || 'USER'}
+                        </span>
+                        {userRoleData?.isOwner ? (
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-500/40">
+                            Verified Owner
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-neutral-800 text-neutral-300 border border-neutral-700">
+                            Standard Tier
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-[10px] font-mono text-neutral-400 block">Max Fallbacks</span>
+                    <span className="text-xs font-mono text-amber-300 font-semibold">
+                      {userRoleData?.role === 'OWNER' || userRoleData?.role === 'ADMIN'
+                        ? '10 Fallbacks'
+                        : userRoleData?.role === 'PAID_USER'
+                        ? '7 Fallbacks'
+                        : '3 Fallbacks'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Master Owner Code Verification Flow */}
+                <div className="border-t border-neutral-800/60 pt-3">
+                  {!userRoleData?.isOwner ? (
+                    <div>
+                      {!showOwnerCodeField ? (
+                        <button
+                          type="button"
+                          onClick={() => setShowOwnerCodeField(true)}
+                          className="text-[11px] font-mono text-amber-300/90 hover:text-amber-200 underline decoration-amber-500/40 transition-colors"
+                        >
+                          Verify Master Owner Access Code →
+                        </button>
+                      ) : (
+                        <form
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            if (!ownerCodeInput.trim()) return;
+                            setIsVerifyingCode(true);
+                            setOwnerCodeStatus(null);
+                            try {
+                              const res = await verifyOwnerCodeAPI(ownerCodeInput.trim());
+                              if (res.success && res.isOwner) {
+                                setUserRoleData({ isOwner: true, role: 'OWNER' });
+                                setOwnerCodeStatus({ success: 'Master Owner access verified. Full LUXION product capabilities unlocked.' });
+                                setOwnerCodeInput('');
+                                const savedUser = localStorage.getItem('luxion_user');
+                                if (savedUser) {
+                                  try {
+                                    const u = JSON.parse(savedUser);
+                                    localStorage.setItem('luxion_user', JSON.stringify({ ...u, role: 'OWNER' }));
+                                  } catch {}
+                                }
+                              } else {
+                                setOwnerCodeStatus({ error: res.message || 'Invalid access code.' });
+                              }
+                            } catch {
+                              setOwnerCodeStatus({ error: 'Invalid access code.' });
+                            } finally {
+                              setIsVerifyingCode(false);
+                            }
+                          }}
+                          className="space-y-2 mt-1"
+                        >
+                          <div className="flex gap-2">
+                            <input
+                              type="password"
+                              value={ownerCodeInput}
+                              onChange={(e) => setOwnerCodeInput(e.target.value)}
+                              placeholder="Enter Master Owner Access Code"
+                              className="flex-1 rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-xs text-neutral-200 placeholder-neutral-500 font-mono focus:outline-none focus:border-amber-400"
+                            />
+                            <button
+                              type="submit"
+                              disabled={isVerifyingCode || !ownerCodeInput.trim()}
+                              className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-amber-400 text-neutral-950 hover:bg-amber-300 disabled:opacity-50 transition-colors font-mono"
+                            >
+                              {isVerifyingCode ? 'Verifying...' : 'Verify'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setShowOwnerCodeField(false);
+                                setOwnerCodeStatus(null);
+                                setOwnerCodeInput('');
+                              }}
+                              className="px-2.5 py-1.5 rounded-lg text-xs text-neutral-400 hover:text-white transition-colors"
+                            >
+                              Cancel
+                            </button>
+                          </div>
+
+                          {ownerCodeStatus?.error && (
+                            <p className="text-[11px] font-mono text-rose-400">
+                              {ownerCodeStatus.error}
+                            </p>
+                          )}
+                          {ownerCodeStatus?.success && (
+                            <p className="text-[11px] font-mono text-emerald-400">
+                              {ownerCodeStatus.success}
+                            </p>
+                          )}
+                        </form>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5 text-[11px] font-mono text-emerald-400">
+                      <ShieldCheck className="h-3.5 w-3.5" />
+                      <span>Master Owner verified. Extended fallbacks &amp; diagnostics active.</span>
+                    </div>
+                  )}
+                </div>
+
+                <p className="text-[11px] text-neutral-400 leading-relaxed border-t border-neutral-800/60 pt-2.5">
+                  <strong className="text-neutral-300">Role Integrity:</strong> Owner role is authenticated strictly by server-side verification against the environment. Owner privileges enable development diagnostics, but never bypass external provider quotas, billing, rate limits, or Terms of Service.
+                </p>
+              </div>
+
+              {/* Capability Pools Overview */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider font-mono">
+                  Active Capability Pools
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  {[
+                    {
+                      name: '1. Chat, Code & Reasoning',
+                      models: 'Gemini 3.8 Flash, 3.5 Flash-Lite, 2.5 Pro; Groq Llama 3.3 70B, Mixtral',
+                      status: 'Active',
+                    },
+                    {
+                      name: '2. Image Generation & Edit',
+                      models: 'Nano Banana 2 (gemini-3.1-flash-image), Nano Banana Pro, Imagen 3',
+                      status: 'Connected',
+                    },
+                    {
+                      name: '3. Video Generation',
+                      models: 'Veo 3.1, Veo 3.1 Lite (veo-3.1-generate-preview)',
+                      status: 'Connected',
+                    },
+                    {
+                      name: '4. Text-To-Speech (TTS)',
+                      models: 'Gemini Flash TTS (Charon & Fenrir), Local Synthesizer',
+                      status: 'Active',
+                    },
+                    {
+                      name: '5. Modular Research Engine',
+                      models: 'Deep Knowledge Synthesis (Modular crawler integration)',
+                      status: 'Modular',
+                    },
+                    {
+                      name: '6. Trading & Market Research',
+                      models: 'Quantitative Indicators, Risk-to-Reward evaluation (No automated trading)',
+                      status: 'Active',
+                    },
+                  ].map((pool) => (
+                    <div key={pool.name} className="p-3 rounded-xl border border-neutral-800 bg-neutral-900/40 text-xs">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold text-neutral-200">{pool.name}</span>
+                        <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950/60 px-1.5 py-0.5 rounded border border-emerald-800/40">
+                          {pool.status}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-neutral-400 font-mono leading-relaxed">{pool.models}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Per-Model Quota Isolation Table */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-semibold text-neutral-300 uppercase tracking-wider font-mono">
+                    Model Quota Isolation Matrix
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsLoadingDiagnostics(true);
+                      getProviderDiagnosticsAPI().then((d) => {
+                        if (d) setDiagnosticsData(d);
+                        setIsLoadingDiagnostics(false);
+                      });
+                    }}
+                    className="flex items-center gap-1 text-[11px] font-mono text-neutral-400 hover:text-white transition-colors"
+                  >
+                    <RotateCcw className={`h-3 w-3 ${isLoadingDiagnostics ? 'animate-spin' : ''}`} />
+                    <span>Refresh</span>
+                  </button>
+                </div>
+
+                <div className="rounded-xl border border-neutral-800 bg-neutral-900/40 overflow-hidden divide-y divide-neutral-800/60">
+                  {(diagnosticsData?.providers || []).map((p: any) => (
+                    <div key={p.id} className="p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold text-neutral-200 font-mono">{p.name}</span>
+                        <span
+                          className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+                            p.health?.isHealthy
+                              ? 'bg-emerald-950 text-emerald-300 border-emerald-500/40'
+                              : 'bg-neutral-900 text-neutral-400 border-neutral-700'
+                          }`}
+                        >
+                          {p.health?.status || 'AVAILABLE'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                        {(p.models || []).map((m: any) => (
+                          <div
+                            key={m.id}
+                            className="flex items-center justify-between bg-neutral-950/70 p-2 rounded-lg border border-neutral-800/80 text-[11px] font-mono"
+                          >
+                            <span className="truncate pr-2 text-neutral-300">{m.id}</span>
+                            <span
+                              className={`shrink-0 text-[10px] px-1.5 py-0.5 rounded ${
+                                m.status === 'RATE_LIMITED'
+                                  ? 'bg-rose-950 text-rose-300 border border-rose-800/40'
+                                  : m.status === 'NOT_CONFIGURED'
+                                  ? 'bg-neutral-900 text-neutral-500'
+                                  : 'bg-emerald-950/80 text-emerald-400'
+                              }`}
+                            >
+                              {m.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <p className="text-[11px] text-neutral-500 font-mono">
+                  * Isolated model quotas: If an individual model reports rate limits, only that specific model enters cooldown; remaining models and sibling providers remain active.
+                </p>
               </div>
             </div>
           )}

@@ -18,6 +18,9 @@ import {
   AlertCircle,
   RotateCcw,
   SmilePlus,
+  Download,
+  Film,
+  Sparkles,
 } from 'lucide-react';
 import { ChatMessage, VoiceSettings, ChatAttachment, AppSettings } from '../types';
 import { sendChatMessage } from '../services/api';
@@ -26,6 +29,9 @@ import { CodeBlock } from './CodeBlock';
 import { PreviewModal } from './PreviewModal';
 import { TypewriterMessage } from './TypewriterMessage';
 import { CommandPalette, AVAILABLE_COMMANDS } from './CommandPalette';
+import { imageGenerationService } from '../services/imageGeneration';
+import { videoGenerationService } from '../services/videoGeneration';
+import { NavaGameSystem } from '../services/navaGameSystem';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -75,6 +81,7 @@ export const ChatView: React.FC<ChatViewProps> = ({
   const [input, setInput] = useState('');
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [loadingLabel, setLoadingLabel] = useState<string | null>(null);
   const [isListening, setIsListening] = useState(false);
   const [speakingId, setSpeakingId] = useState<string | null>(null);
   const [playbackState, setPlaybackState] = useState<'idle' | 'playing' | 'paused'>('idle');
@@ -515,7 +522,151 @@ export const ChatView: React.FC<ChatViewProps> = ({
     setIsLoading(true);
     setIsTypingStopped(false);
 
+    const lowerText = (text || '').toLowerCase().trim();
+
+    // 1. Check NAVA interactive loading screen build request
+    if (
+      lowerText.includes('build a nava loading screen') ||
+      lowerText.includes('nava loading screen') ||
+      (activeCommand === '/game' && lowerText.includes('loading screen'))
+    ) {
+      const code = NavaGameSystem.generateLoadingScreenCode();
+      const botMessage: ChatMessage = {
+        id: `bot_${Date.now()}`,
+        role: 'assistant',
+        content: `### **NAVA Original Game — Interactive Loading Screen**\n\nHere is the runnable HTML5/CSS loading screen architecture for NAVA. You can preview it immediately using the **Preview** button:\n\n\`\`\`html\n${code}\n\`\`\``,
+        timestamp: Date.now(),
+      };
+      onUpdateMessages([...newMessages, botMessage]);
+      setIsLoading(false);
+      return;
+    }
+
+    // 2. Check NAVA Main Character request
+    if (
+      lowerText.includes('create nava mc') ||
+      lowerText.includes('nava main character') ||
+      lowerText.includes('nava protagonist') ||
+      (activeCommand === '/character' && (lowerText.includes('mc') || lowerText.includes('main') || !text.trim()))
+    ) {
+      const spec = NavaGameSystem.createMainCharacter();
+      const formatted = NavaGameSystem.formatCharacterMarkdown(spec);
+      const botMessage: ChatMessage = {
+        id: `bot_${Date.now()}`,
+        role: 'assistant',
+        content: formatted,
+        timestamp: Date.now(),
+      };
+      onUpdateMessages([...newMessages, botMessage]);
+      setIsLoading(false);
+      return;
+    }
+
+    // 3. Image Generation Workflow (/image, /image-gen, or explicit image creation)
+    const isImageGen =
+      activeCommand === '/image' ||
+      activeCommand === '/image-gen' ||
+      /^(?:generate|create|render|draw|make)\s+(?:an?\s+)?(?:image|picture|artwork|illustration|portrait|drawing)\b/i.test(text);
+
+    if (isImageGen) {
+      setLoadingLabel('Creating image...');
+      const cleanPrompt = text.replace(/^\/(?:image|image-gen)\s*/i, '').trim() || 'NAVA high fantasy original protagonist concept art';
+      try {
+        const imageResult = await imageGenerationService.generateImage(cleanPrompt);
+        if (imageResult.success && (imageResult.imageData || imageResult.imageUrl)) {
+          const botMessage: ChatMessage = {
+            id: `bot_${Date.now()}`,
+            role: 'assistant',
+            content: `Generated concept image for: "${cleanPrompt}"`,
+            mediaType: 'image',
+            mediaData: imageResult.imageData,
+            mediaUrl: imageResult.imageUrl,
+            mediaPrompt: cleanPrompt,
+            provider: imageResult.provider,
+            timestamp: Date.now(),
+          };
+          onUpdateMessages([...newMessages, botMessage]);
+          return;
+        } else {
+          const botMessage: ChatMessage = {
+            id: `bot_${Date.now()}`,
+            role: 'assistant',
+            content: `### **LUXION Visual Concept Specification**\n\n**Visual Prompt:**\n\`\`\`text\n${cleanPrompt}\n\`\`\`\n\n> **Provider Notice:** ${imageResult.error || 'The image generation provider is not configured yet. Set IMAGE_API_KEY on the server to generate real images.'}`,
+            timestamp: Date.now(),
+          };
+          onUpdateMessages([...newMessages, botMessage]);
+          return;
+        }
+      } catch (err: any) {
+        const botMessage: ChatMessage = {
+          id: `bot_${Date.now()}`,
+          role: 'assistant',
+          content: `Image generation error: ${err.message || 'Unable to connect to generation service'}.`,
+          isError: true,
+          timestamp: Date.now(),
+        };
+        onUpdateMessages([...newMessages, botMessage]);
+        return;
+      } finally {
+        setIsLoading(false);
+        setLoadingLabel(null);
+      }
+    }
+
+    // 4. Video Generation Workflow (/video, /video-gen, or explicit video creation)
+    const isVideoGen =
+      activeCommand === '/video' ||
+      activeCommand === '/video-gen' ||
+      /^(?:generate|create|render|make)\s+(?:an?\s+)?(?:cinematic\s+)?(?:video|clip|animation|footage)\b/i.test(text);
+
+    if (isVideoGen) {
+      setLoadingLabel('Generating video...');
+      const cleanPrompt = text.replace(/^\/(?:video|video-gen)\s*/i, '').trim() || 'NAVA cinematic high fantasy trailer cutscene';
+      try {
+        const videoResult = await videoGenerationService.generateVideo(cleanPrompt);
+        if (videoResult.success && (videoResult.videoUrl || videoResult.videoData)) {
+          const botMessage: ChatMessage = {
+            id: `bot_${Date.now()}`,
+            role: 'assistant',
+            content: `Generated cinematic video for: "${cleanPrompt}"`,
+            mediaType: 'video',
+            mediaUrl: videoResult.videoUrl,
+            mediaData: videoResult.videoData,
+            mediaPrompt: cleanPrompt,
+            provider: videoResult.provider,
+            timestamp: Date.now(),
+          };
+          onUpdateMessages([...newMessages, botMessage]);
+          return;
+        } else {
+          const botMessage: ChatMessage = {
+            id: `bot_${Date.now()}`,
+            role: 'assistant',
+            content: `### **LUXION Cinematic Video Specification**\n\n**Cinematic Prompt:**\n\`\`\`text\n${cleanPrompt}\n\`\`\`\n\n> **Provider Notice:** ${videoResult.error || 'The video generation provider is not configured yet. Set VIDEO_API_KEY on the server to generate real videos.'}`,
+            timestamp: Date.now(),
+          };
+          onUpdateMessages([...newMessages, botMessage]);
+          return;
+        }
+      } catch (err: any) {
+        const botMessage: ChatMessage = {
+          id: `bot_${Date.now()}`,
+          role: 'assistant',
+          content: `Video generation error: ${err.message || 'Unable to connect to generation service'}.`,
+          isError: true,
+          timestamp: Date.now(),
+        };
+        onUpdateMessages([...newMessages, botMessage]);
+        return;
+      } finally {
+        setIsLoading(false);
+        setLoadingLabel(null);
+      }
+    }
+
+    // 5. Standard AI Chat / Code / Reasoning Pipeline
     try {
+      setLoadingLabel(null);
       const history = newMessages
         .slice(-10)
         .filter((m) => !m.isError)
@@ -561,13 +712,14 @@ export const ChatView: React.FC<ChatViewProps> = ({
       const errorMessage: ChatMessage = {
         id: `err_${Date.now()}`,
         role: 'assistant',
-        content: err?.message || 'AI connection failed. Try again.',
+        content: err?.message || 'AI service is temporarily unavailable. Please try again later.',
         isError: true,
         timestamp: Date.now(),
       };
       onUpdateMessages([...newMessages, errorMessage]);
     } finally {
       setIsLoading(false);
+      setLoadingLabel(null);
     }
   };
 
@@ -825,6 +977,69 @@ export const ChatView: React.FC<ChatViewProps> = ({
                         : 'bg-black text-neutral-200 border border-neutral-900 shadow-sm'
                     }`}
                   >
+                    {/* Render Real Generated Images */}
+                    {msg.mediaType === 'image' && (msg.mediaData || msg.mediaUrl) && (
+                      <div className="mb-3 overflow-hidden rounded-xl border border-neutral-700/60 bg-neutral-950 max-w-md">
+                        <img
+                          src={msg.mediaData || msg.mediaUrl}
+                          alt={msg.mediaPrompt || 'Generated image'}
+                          className="max-h-80 w-full object-cover rounded-t-xl"
+                          referrerPolicy="no-referrer"
+                        />
+                        <div className="p-3 bg-neutral-900/90 border-t border-neutral-800 flex items-center justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <span className="text-[10px] uppercase tracking-wider text-cyan-400 font-semibold block">Generated Image</span>
+                            {msg.mediaPrompt && (
+                              <p className="text-[11px] text-neutral-300 font-mono truncate" title={msg.mediaPrompt}>
+                                {msg.mediaPrompt}
+                              </p>
+                            )}
+                          </div>
+                          <a
+                            href={msg.mediaData || msg.mediaUrl}
+                            download="luxion-image.jpg"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="shrink-0 flex items-center gap-1 text-[11px] font-mono text-white bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-2.5 py-1 rounded transition-colors"
+                          >
+                            <Download className="h-3 w-3" />
+                            <span>Save</span>
+                          </a>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Render Real Generated Videos */}
+                    {msg.mediaType === 'video' && (msg.mediaData || msg.mediaUrl) && (
+                      <div className="mb-3 overflow-hidden rounded-xl border border-neutral-700/60 bg-neutral-950 max-w-md">
+                        <video
+                          src={msg.mediaData || msg.mediaUrl}
+                          controls
+                          className="max-h-80 w-full object-cover rounded-t-xl bg-black"
+                        />
+                        <div className="p-3 bg-neutral-900/90 border-t border-neutral-800 flex items-center justify-between gap-2">
+                          <div className="min-w-0 flex-1">
+                            <span className="text-[10px] uppercase tracking-wider text-cyan-400 font-semibold block">Generated Video</span>
+                            {msg.mediaPrompt && (
+                              <p className="text-[11px] text-neutral-300 font-mono truncate" title={msg.mediaPrompt}>
+                                {msg.mediaPrompt}
+                              </p>
+                            )}
+                          </div>
+                          <a
+                            href={msg.mediaData || msg.mediaUrl}
+                            download="luxion-video.mp4"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="shrink-0 flex items-center gap-1 text-[11px] font-mono text-white bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 px-2.5 py-1 rounded transition-colors"
+                          >
+                            <Download className="h-3 w-3" />
+                            <span>Save</span>
+                          </a>
+                        </div>
+                      </div>
+                    )}
+
                     {msg.attachment?.type === 'image' && msg.attachment.dataUrl && (
                       <div className="mb-2.5 overflow-hidden rounded-xl border border-neutral-700/50 max-w-sm">
                         <img
@@ -1115,10 +1330,15 @@ export const ChatView: React.FC<ChatViewProps> = ({
 
           {isLoading && (
             <div className="flex justify-start animate-fade-in">
-              <div className="rounded-2xl border border-neutral-800/80 bg-neutral-900/90 px-4 py-3 text-xs text-neutral-400 flex items-center gap-2">
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-neutral-400 animate-pulse"></span>
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-neutral-400 animate-pulse [animation-delay:0.2s]"></span>
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-neutral-400 animate-pulse [animation-delay:0.4s]"></span>
+              <div className="rounded-2xl border border-neutral-800/80 bg-neutral-900/90 px-4 py-3 text-xs text-neutral-400 flex items-center gap-2 font-mono">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse"></span>
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse [animation-delay:0.2s]"></span>
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-cyan-400 animate-pulse [animation-delay:0.4s]"></span>
+                {loadingLabel && (
+                  <span className="ml-1 text-neutral-300 font-medium tracking-wide">
+                    {loadingLabel}
+                  </span>
+                )}
               </div>
             </div>
           )}

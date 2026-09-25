@@ -32,6 +32,11 @@ export type LuxionIntent =
   | 'memory_query'
   | 'memory_action'
   | 'knowledge_query'
+  | 'image_generation'
+  | 'video_generation'
+  | 'image_edit'
+  | 'game_design'
+  | 'trading_research'
   | 'unclear';
 
 export interface PersonalityState {
@@ -1046,6 +1051,51 @@ export class LuxionBrain {
     if (!raw) return { intent: 'unclear', confidence: 0.1 };
 
     const clean = raw.toLowerCase();
+
+    // Creative & Game Pipeline Intents
+    if (
+      clean.startsWith('/character') ||
+      clean.startsWith('/game') ||
+      clean.includes('create nava mc') ||
+      clean.includes('nava main character') ||
+      clean.includes('nava protagonist') ||
+      clean.includes('build a nava loading screen') ||
+      clean.includes('nava loading screen') ||
+      /(?:design|create|build)\s+(?:a|the)?\s*nava\b/i.test(clean)
+    ) {
+      return { intent: 'game_design', confidence: 0.98 };
+    }
+
+    if (
+      clean.startsWith('/image-edit') ||
+      /(?:edit|modify|tweak|change|adjust)\s+(?:this|the)?\s*(?:image|picture|photo|drawing)/i.test(clean)
+    ) {
+      return { intent: 'image_edit', confidence: 0.96 };
+    }
+
+    if (
+      clean.startsWith('/image') ||
+      clean.startsWith('/image-gen') ||
+      /(?:generate|create|render|draw|make)\s+(?:an?\s+)?(?:image|picture|artwork|illustration|portrait|drawing|visual)/i.test(clean)
+    ) {
+      return { intent: 'image_generation', confidence: 0.96 };
+    }
+
+    if (
+      clean.startsWith('/video') ||
+      clean.startsWith('/video-gen') ||
+      /(?:generate|create|render|make)\s+(?:an?\s+)?(?:cinematic\s+)?(?:video|clip|animation|footage)/i.test(clean)
+    ) {
+      return { intent: 'video_generation', confidence: 0.96 };
+    }
+
+    if (
+      clean.startsWith('/analyze trading') ||
+      /(?:analyze|evaluate|research)\s+(?:market|trading|stock|crypto|bitcoin|eth|chart|rsi|macd|tokenomics)/i.test(clean) ||
+      /(?:market trend|trading strategy|technical analysis|financial analysis)/i.test(clean)
+    ) {
+      return { intent: 'trading_research', confidence: 0.96 };
+    }
 
     // 1. Founder Inquiry or Direct Identity
     if (
